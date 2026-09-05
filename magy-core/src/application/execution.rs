@@ -96,8 +96,9 @@ pub fn run_execution_cycle(
             }
             Some(r) => match r.outcome {
                 ExecutionOutcome::Denied => {
-                    trace.stopped_reason = "Action denied".to_string();
-                    true
+                    trace.stopped_reason =
+                        "Action denied; asking the model for a different action".to_string();
+                    false
                 }
                 ExecutionOutcome::AwaitingApproval => {
                     trace.stopped_reason = "Action requires approval".to_string();

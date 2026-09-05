@@ -78,6 +78,11 @@ Magy reads the project, plans work, and asks the model what to do.
 *   **Restricted actions** (like writing files or executing commands) require explicit operator approval in the UI.
 *   **Commands** are deny-by-default and must exactly match an allowlisted command
     before an approval prompt is shown.
+*   Denied actions are recorded in the activity feed and the agent asks the model
+    for a replacement action instead of silently ending the run.
+*   The workspace includes an **Auto-execute safe tools** toggle. It can
+    automatically execute file writes; shell commands remain restricted to the
+    exact command allowlist.
 *   **Verification**: After changes are made, Magy runs a verification command (configurable, defaults to `cargo test`). If verification fails, the failure output is given back to the model so it can attempt another fix.
 
 A task is complete when verification succeeds.

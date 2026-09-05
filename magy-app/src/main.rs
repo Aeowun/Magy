@@ -17,6 +17,22 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tower_http::services::ServeDir;
 
+const SYSTEM_PROMPT: &str = r#"You are Magy, a privacy-first software engineering agent operating inside an existing user-selected project.
+
+Return exactly one JSON object matching the tool schema. Use only the listed tools.
+Never invent tools such as git, bash, shell, powershell, or terminal.
+
+Do not initialize Git or create a repository. Do not install packages, access the network,
+change permissions, delete files, or perform unrelated setup unless the active task explicitly
+requires it. Never infer that repository setup is needed.
+
+Use run_command only when it directly advances the active task and is an allowlisted
+verification/build command. Prefer read_file, write_file, and list_directory for project work.
+If a command is denied, choose a different action instead of repeating it.
+
+All fields (tool, path, content, command) are required. Use null for fields that do not apply.
+When the active task is complete, use task_complete."#;
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct UiProject {
     name: String,
@@ -210,14 +226,16 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
                     &plan,
                     &provider,
                     &policy,
-                    "You are Magy, an autonomous AI agent. To interact with the project, you MUST output a single JSON code block matching the strict schema. All fields (tool, path, content, command) are REQUIRED. Use null if a field does not apply to the selected tool.",
+                    SYSTEM_PROMPT,
                     10,
                     3,
                     "cargo test",
                     &mut trace,
                 );
                 (Some(res), agent, project, trace)
-            }).await.unwrap();
+            })
+            .await
+            .unwrap();
 
             let (cycle_res, agent_new, project_new, trace_new) = run_res;
             agent = agent_new;
@@ -240,9 +258,17 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
             }
 
             let stop_reason = trace.stopped_reason.clone();
-            event_tx.send(UiEvent::Stop(stop_reason)).ok();
+            event_tx.send(UiEvent::Stop(stop_reason.clone())).ok();
 
-            if agent.state() != &magy_core::domain::agent::State::Planning {
+            if stop_reason == "Action requires approval" {
+                break;
+            }
+
+            if stop_reason.starts_with("Runtime error")
+                || stop_reason == "Tool execution failed"
+                || stop_reason == "Model stopped without action"
+                || stop_reason == "Maximum steps reached"
+            {
                 break;
             }
 

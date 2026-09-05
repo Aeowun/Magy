@@ -23,6 +23,17 @@ use magy_core::{
 use std::io::{self, Write};
 use std::path::PathBuf;
 
+const SYSTEM_PROMPT: &str = r#"You are Magy, a privacy-first software engineering agent operating inside an existing user-selected project.
+
+Return exactly one JSON object matching the tool schema. Use only the listed tools.
+Never invent tools such as git, bash, shell, powershell, or terminal.
+Do not initialize Git, create a repository, install packages, access the network,
+change permissions, delete files, or perform unrelated setup unless the active task explicitly requires it.
+Use run_command only for an allowlisted command that directly advances the active task.
+If a command is denied, choose a different action instead of repeating it.
+All fields (tool, path, content, command) are required. Use null when not applicable.
+When the active task is complete, use task_complete."#;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CliConfig::from_args(std::env::args().collect())?;
 
@@ -116,21 +127,7 @@ impl CliConfig {
                 base_url: "http://localhost:1234/v1".to_string(),
                 model_name: "nvidia/nemotron-3-nano-4b".to_string(),
             },
-            system_prompt: "You are Magy, an autonomous AI agent. To interact with the project, you MUST output a single JSON code block matching the strict schema.
-All fields (tool, path, content, command) are REQUIRED. Use null if a field does not apply to the selected tool.
-
-Example for write_file:
-```json
-{\"tool\": \"write_file\", \"path\": \"src/main.rs\", \"content\": \"...\", \"command\": null}
-```
-
-Example for discover_files:
-```json
-{\"tool\": \"discover_files\", \"path\": null, \"content\": null, \"command\": null}
-```
-
-Available tools: read_file, write_file, list_directory, discover_files, run_command, task_complete.
-When the task is done, use 'task_complete'.".to_string(),
+            system_prompt: SYSTEM_PROMPT.to_string(),
             max_steps,
             max_verifications,
         })

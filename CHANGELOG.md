@@ -9,6 +9,11 @@
 * Added bounded file reads/writes and synchronized temporary-file replacement.
 * Added command timeouts and bounded stdout/stderr capture.
 * Added Windows launch and developer-shell scripts.
+* Added explicit model instructions against invented Git/repository setup and
+  unrelated shell commands.
+* Denied actions now remain visible and trigger a replacement-action attempt
+  instead of silently stopping the workflow.
+* Added the UI auto-execute toggle for safe file tools.
 
 All notable changes to Magy are documented here.
 
