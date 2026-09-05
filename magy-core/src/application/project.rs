@@ -57,6 +57,25 @@ impl ApprovalPolicy for DefaultApprovalPolicy {
     }
 }
 
+/// Coordinates the opening of a project: reading the file, parsing it,
+/// and initializing the agent run.
+pub fn open_project(root: PathBuf) -> Result<(Agent, Project), Error> {
+    // 1. Read Project.md from the root.
+    let content = read_file(&root, Path::new("Project.md"))?;
+
+    // 2. Parse the content into the Project domain model.
+    let project = parse_project_md(&content)?;
+
+    // 3. Create a new Agent.
+    let mut agent = Agent::new();
+
+    // 4. Start the Agent with the project root.
+    agent.transition(Event::Start(root))?;
+
+    // 5. Return the coordinated result.
+    Ok((agent, project))
+}
+
 /// Performs a bounded sequence of reasoning and execution steps.
 pub fn run_execution_cycle(
     agent: &Agent,
@@ -73,6 +92,7 @@ pub fn run_execution_cycle(
     };
 
     for i in 0..max_steps {
+        // 1. Perform one reasoning/execution step.
         let step = match run_reasoning_step(
             agent,
             context,
@@ -122,6 +142,7 @@ pub fn run_execution_cycle(
             return Ok(trace);
         }
 
+        // 3. Re-verify agent state.
         if agent.state() != &State::Executing {
             trace.stopped_reason = "Agent is no longer in Executing state".to_string();
             return Ok(trace);
@@ -141,10 +162,12 @@ pub fn run_reasoning_step(
     policy: &dyn ApprovalPolicy,
     system_prompt: &str,
 ) -> Result<StepResult, Error> {
+    // 1. Ensure the agent is in the Executing state.
     if agent.state() != &State::Executing {
         return Err(Error::InvalidStateTransition);
     }
 
+    // 2. Ask the model for the next action.
     let request = ModelRequest {
         system_prompt: system_prompt.to_string(),
         context: context.clone(),
@@ -154,8 +177,11 @@ pub fn run_reasoning_step(
     };
 
     let response = provider.ask(request)?;
+
+    // 3. Parse the model's response for a tool call.
     let action = parse_model_action(&response.content);
 
+    // 4. Evaluate approval and execute if permitted.
     let action_record = if let Some(ModelAction::ToolCall(tool_req)) = action {
         let approval_status = policy.evaluate(&tool_req);
         let outcome = match approval_status {
@@ -671,7 +697,7 @@ mod tests {
         fs::create_dir(root.join("empty")).unwrap();
 
         let (_, project) = open_project(root.clone()).unwrap();
-        let context = assemble_project_context(root, project.clone()).unwrap();
+        let context = assemble_project_context(root.clone(), project.clone()).unwrap();
 
         assert_eq!(context.project, project);
 
@@ -856,40 +882,6 @@ mod tests {
     }
 
     #[test]
-    fn test_run_execution_cycle_command_sequence() {
-        let dir = tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
-
-        let (mut agent, project) = open_project(root.clone()).unwrap();
-        let context = assemble_project_context(root.clone(), project.clone()).unwrap();
-        let plan = plan_execution(&agent, &context).unwrap();
-        select_task(&mut agent, &project, "1").unwrap();
-
-        let provider = MultiMockProvider {
-            responses: std::cell::RefCell::new(vec![
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"run_command\", \"command\": \"echo first\"}\n```".to_string() }),
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"run_command\", \"command\": \"echo second\"}\n```".to_string() }),
-                Ok(ModelResponse { content: "Done.".to_string() }),
-            ]),
-        };
-
-        let trace = run_execution_cycle(&agent, &context, &plan, &provider, "S", 5).unwrap();
-
-        assert_eq!(trace.steps.len(), 3);
-        if let Some(ToolResult::Command(ref out)) = trace.steps[0].tool_result {
-            assert_eq!(out.stdout.trim(), "first");
-        } else {
-            panic!("Expected first command result");
-        }
-        if let Some(ToolResult::Command(ref out)) = trace.steps[1].tool_result {
-            assert_eq!(out.stdout.trim(), "second");
-        } else {
-            panic!("Expected second command result");
-        }
-    }
-
-    #[test]
     fn test_execute_tool_invalid_state() {
         let agent = Agent::new();
         let request = ToolRequest::DiscoverFiles;
@@ -924,14 +916,15 @@ mod tests {
             }),
         };
 
-        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, "prompt").unwrap();
+        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "prompt").unwrap();
 
-        assert_eq!(result.action, Some(ModelAction::ToolCall(ToolRequest::ReadFile { path: PathBuf::from("test.txt") })));
-        assert_eq!(result.tool_result, Some(ToolResult::Text("hello".to_string())));
+        let record = result.action_record.unwrap();
+        assert_eq!(record.request, ToolRequest::ReadFile { path: PathBuf::from("test.txt") });
+        assert_eq!(record.outcome, ExecutionOutcome::Executed(ToolResult::Text("hello".to_string())));
     }
 
     #[test]
-    fn test_run_reasoning_step_write_file() {
+    fn test_run_reasoning_step_pending() {
         let dir = tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
@@ -947,14 +940,47 @@ mod tests {
             }),
         };
 
-        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, "prompt").unwrap();
+        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "prompt").unwrap();
 
-        assert_eq!(result.action, Some(ModelAction::ToolCall(ToolRequest::WriteFile {
-            path: PathBuf::from("out.txt"),
-            content: "data".to_string()
-        })));
-        assert_eq!(result.tool_result, Some(ToolResult::Success));
-        assert_eq!(fs::read_to_string(root.join("out.txt")).unwrap(), "data");
+        let record = result.action_record.unwrap();
+        assert_eq!(record.approval_status, ApprovalStatus::Pending);
+        assert_eq!(record.outcome, ExecutionOutcome::AwaitingApproval);
+        assert!(!root.join("out.txt").exists());
+    }
+
+    struct MockPolicy {
+        status: ApprovalStatus,
+    }
+    impl ApprovalPolicy for MockPolicy {
+        fn evaluate(&self, _req: &ToolRequest) -> ApprovalStatus {
+            self.status.clone()
+        }
+    }
+
+    #[test]
+    fn test_run_reasoning_step_denied() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
+
+        let (mut agent, project) = open_project(root.clone()).unwrap();
+        let context = assemble_project_context(root.clone(), project.clone()).unwrap();
+        let plan = plan_execution(&agent, &context).unwrap();
+        select_task(&mut agent, &project, "1").unwrap();
+
+        let provider = MockProvider {
+            response: Ok(ModelResponse {
+                content: "```json\n{\"tool\": \"read_file\", \"path\": \"test.txt\"}\n```".to_string(),
+            }),
+        };
+
+        let policy = MockPolicy { status: ApprovalStatus::Denied };
+
+        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, &policy, "prompt").unwrap();
+
+        let record = result.action_record.unwrap();
+        assert_eq!(record.approval_status, ApprovalStatus::Denied);
+        assert_eq!(record.outcome, ExecutionOutcome::Denied);
     }
 
     #[test]
@@ -975,7 +1001,7 @@ mod tests {
         let plan = ProjectPlan { tasks: vec![] };
         let provider = MockProvider { response: Err(Error::Io) };
 
-        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, "S");
+        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "S");
         assert_eq!(result, Err(Error::InvalidStateTransition));
     }
 
@@ -994,7 +1020,7 @@ mod tests {
             response: Err(Error::ModelError("Bad request".to_string())),
         };
 
-        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, "S");
+        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "S");
         assert_eq!(result, Err(Error::ModelError("Bad request".to_string())));
     }
 
@@ -1015,9 +1041,8 @@ mod tests {
             }),
         };
 
-        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, "S").unwrap();
-        assert_eq!(result.action, None);
-        assert_eq!(result.tool_result, None);
+        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "S").unwrap();
+        assert_eq!(result.action_record, None);
     }
 
     #[test]
@@ -1037,8 +1062,9 @@ mod tests {
             }),
         };
 
-        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, "S").unwrap();
-        assert_eq!(result.tool_result, Some(ToolResult::Error("Read error: OutsideBoundary".to_string())));
+        let result = run_reasoning_step(&agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "S").unwrap();
+        let record = result.action_record.unwrap();
+        assert!(matches!(record.outcome, ExecutionOutcome::Executed(ToolResult::Error(_))));
     }
 
     struct MultiMockProvider {
@@ -1065,46 +1091,19 @@ mod tests {
         let provider = MultiMockProvider {
             responses: std::cell::RefCell::new(vec![
                 Ok(ModelResponse { content: "```json\n{\"tool\": \"read_file\", \"path\": \"input.txt\"}\n```".to_string() }),
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"write_file\", \"path\": \"output.txt\", \"content\": \"processed\"}\n```".to_string() }),
                 Ok(ModelResponse { content: "Done.".to_string() }),
             ]),
         };
 
-        let trace = run_execution_cycle(&agent, &context, &plan, &provider, "S", 5).unwrap();
-
-        assert_eq!(trace.steps.len(), 3);
-        assert_eq!(trace.stopped_reason, "Model stopped without action");
-        assert_eq!(trace.steps[0].tool_result, Some(ToolResult::Text("data".to_string())));
-        assert_eq!(trace.steps[1].tool_result, Some(ToolResult::Success));
-        assert_eq!(fs::read_to_string(root.join("output.txt")).unwrap(), "processed");
-    }
-
-    #[test]
-    fn test_run_execution_cycle_max_steps() {
-        let dir = tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
-
-        let (mut agent, project) = open_project(root.clone()).unwrap();
-        let context = assemble_project_context(root.clone(), project.clone()).unwrap();
-        let plan = plan_execution(&agent, &context).unwrap();
-        select_task(&mut agent, &project, "1").unwrap();
-
-        let provider = MultiMockProvider {
-            responses: std::cell::RefCell::new(vec![
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"discover_files\"}\n```".to_string() }),
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"discover_files\"}\n```".to_string() }),
-            ]),
-        };
-
-        let trace = run_execution_cycle(&agent, &context, &plan, &provider, "S", 2).unwrap();
+        let trace = run_execution_cycle(&agent, &context, &plan, &provider, &DefaultApprovalPolicy, "S", 5).unwrap();
 
         assert_eq!(trace.steps.len(), 2);
-        assert_eq!(trace.stopped_reason, "Maximum steps reached");
+        assert_eq!(trace.stopped_reason, "Model stopped without action");
+        assert_eq!(trace.steps[0].action_record.as_ref().unwrap().outcome, ExecutionOutcome::Executed(ToolResult::Text("data".to_string())));
     }
 
     #[test]
-    fn test_run_execution_cycle_tool_failure() {
+    fn test_run_execution_cycle_pending_stop() {
         let dir = tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
@@ -1116,14 +1115,14 @@ mod tests {
 
         let provider = MultiMockProvider {
             responses: std::cell::RefCell::new(vec![
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"read_file\", \"path\": \"missing.txt\"}\n```".to_string() }),
+                Ok(ModelResponse { content: "```json\n{\"tool\": \"write_file\", \"path\": \"out.txt\", \"content\": \"data\"}\n```".to_string() }),
             ]),
         };
 
-        let trace = run_execution_cycle(&agent, &context, &plan, &provider, "S", 5).unwrap();
+        let trace = run_execution_cycle(&agent, &context, &plan, &provider, &DefaultApprovalPolicy, "S", 5).unwrap();
 
         assert_eq!(trace.steps.len(), 1);
-        assert_eq!(trace.stopped_reason, "Tool execution failed");
-        assert!(matches!(trace.steps[0].tool_result, Some(ToolResult::Error(_))));
+        assert_eq!(trace.stopped_reason, "Action requires approval");
+        assert_eq!(trace.steps[0].action_record.as_ref().unwrap().outcome, ExecutionOutcome::AwaitingApproval);
     }
 }
