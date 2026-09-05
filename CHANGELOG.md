@@ -14,6 +14,8 @@
 * Denied actions now remain visible and trigger a replacement-action attempt
   instead of silently stopping the workflow.
 * Added the UI auto-execute toggle for safe file tools.
+* Added project-aware verification selection for Rust, Node, Python, and static
+  projects; the CLI now defaults to `auto` instead of blindly running Cargo.
 
 All notable changes to Magy are documented here.
 

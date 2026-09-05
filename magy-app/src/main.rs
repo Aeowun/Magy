@@ -7,9 +7,9 @@ use axum::{
 };
 use futures_util::stream::Stream;
 use magy_core::{
-    assemble_project_context, open_project, plan_execution, resolve_pending_action,
-    run_execution_cycle, select_task, DefaultApprovalPolicy, ExecutionTrace, LmStudioConfig,
-    LmStudioProvider, Project,
+    assemble_project_context, open_project, plan_execution, recommended_verification_command,
+    resolve_pending_action, run_execution_cycle, select_task, DefaultApprovalPolicy,
+    ExecutionTrace, LmStudioConfig, LmStudioProvider, Project,
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, path::PathBuf, sync::Arc};
@@ -205,6 +205,8 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
             }
 
             let run_res = tokio::task::spawn_blocking(move || {
+                let verification_command =
+                    recommended_verification_command(&root_path).unwrap_or_default();
                 let context = assemble_project_context(root_path, project.clone()).unwrap();
                 let plan = plan_execution(&agent, &context).unwrap();
 
@@ -217,7 +219,7 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
 
                 let provider = LmStudioProvider::new(config);
                 let policy = DefaultApprovalPolicy::default()
-                    .allow_command("cargo test")
+                    .allow_command(verification_command.clone())
                     .auto_approve(auto_approve_tools);
                 let res = run_execution_cycle(
                     &mut agent,
@@ -229,7 +231,7 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
                     SYSTEM_PROMPT,
                     10,
                     3,
-                    "cargo test",
+                    &verification_command,
                     &mut trace,
                 );
                 (Some(res), agent, project, trace)

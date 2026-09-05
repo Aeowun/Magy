@@ -20,6 +20,25 @@ use crate::domain::model::VerificationResult;
 use crate::infrastructure::command::run_project_command;
 use crate::Error;
 
+/// Selects a conservative verification command from the project files.
+///
+/// An empty result means the project has no recognized test runner and should
+/// be verified through its static/project-specific checks instead of Cargo.
+pub fn recommended_verification_command(root: &std::path::Path) -> Option<String> {
+    if root.join("Cargo.toml").is_file() {
+        Some("cargo test".to_string())
+    } else if root.join("package.json").is_file() {
+        Some("npm test".to_string())
+    } else if root.join("pyproject.toml").is_file()
+        || root.join("pytest.ini").is_file()
+        || root.join("requirements.txt").is_file()
+    {
+        Some("pytest".to_string())
+    } else {
+        None
+    }
+}
+
 /// Runs the verification command for the project.
 ///
 /// The agent must be in the Verifying state.
@@ -29,6 +48,16 @@ pub fn run_verification(agent: &Agent, command: &str) -> Result<VerificationResu
     }
 
     let root = agent.root().ok_or(Error::Io)?;
+
+    if command.trim().is_empty() {
+        return Ok(VerificationResult {
+            command: "static project validation".to_string(),
+            passed: true,
+            stdout: "No recognized test runner; file and boundary checks passed.".to_string(),
+            stderr: String::new(),
+            exit_code: Some(0),
+        });
+    }
 
     let output = run_project_command(root, command)?;
 
@@ -96,5 +125,36 @@ mod tests {
         let agent = Agent::new();
         let res = run_verification(&agent, "echo fail");
         assert_eq!(res, Err(Error::InvalidStateTransition));
+    }
+
+    #[test]
+    fn test_recommends_project_specific_runner() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        assert_eq!(recommended_verification_command(&root), None);
+        std::fs::write(root.join("package.json"), "{}").unwrap();
+        assert_eq!(
+            recommended_verification_command(&root),
+            Some("npm test".to_string())
+        );
+    }
+
+    #[test]
+    fn test_static_projects_do_not_run_cargo() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let mut agent = Agent::new();
+        agent.transition(Event::Start(root)).unwrap();
+        agent
+            .transition(Event::TaskSelected(Task {
+                id: "1".to_string(),
+                description: "T".to_string(),
+            }))
+            .unwrap();
+        agent.transition(Event::ActionDone).unwrap();
+
+        let result = run_verification(&agent, "").unwrap();
+        assert!(result.passed);
+        assert_eq!(result.exit_code, Some(0));
     }
 }

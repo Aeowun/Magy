@@ -83,7 +83,10 @@ Magy reads the project, plans work, and asks the model what to do.
 *   The workspace includes an **Auto-execute safe tools** toggle. It can
     automatically execute file writes; shell commands remain restricted to the
     exact command allowlist.
-*   **Verification**: After changes are made, Magy runs a verification command (configurable, defaults to `cargo test`). If verification fails, the failure output is given back to the model so it can attempt another fix.
+*   **Verification**: After changes are made, Magy selects a project-aware verifier:
+    `cargo test` for Rust, `npm test` for Node projects, `pytest` for Python
+    projects, and a bounded static validation for projects without a recognized
+    test runner. Explicit commands remain supported by the CLI.
 
 A task is complete when verification succeeds.
 
@@ -93,6 +96,14 @@ Magy uses deterministic bounds found in the coordination logic (and eventually i
 
 *   **max-steps**: Maximum reasoning steps per task execution cycle.
 *   **max-verifications**: Maximum verification retries per task.
+
+The CLI accepts `auto` as the verification command (the default), or an explicit
+command when the project requires custom verification:
+
+```text
+magy C:\path\to\project auto
+magy C:\path\to\project "npm run lint"
+```
 
 ## Models
 

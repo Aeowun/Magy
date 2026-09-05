@@ -21,6 +21,7 @@ pub mod boundary;
 pub mod domain;
 pub mod infrastructure;
 
+pub use application::verification_runner::recommended_verification_command;
 pub use application::{
     assemble_project_context, complete_current_task, execute_tool, initialize_project,
     open_project, plan_execution, resolve_pending_action, run_execution_cycle,

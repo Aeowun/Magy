@@ -16,9 +16,9 @@
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
 use magy_core::{
-    open_project, resolve_pending_action, run_project_workflow, select_task, ApprovalStatus,
-    DefaultApprovalPolicy, ExecutionTrace, LmStudioConfig, LmStudioProvider, RunResult,
-    ToolRequest,
+    open_project, recommended_verification_command, resolve_pending_action, run_project_workflow,
+    select_task, ApprovalStatus, DefaultApprovalPolicy, ExecutionTrace, LmStudioConfig,
+    LmStudioProvider, RunResult, ToolRequest,
 };
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -38,15 +38,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CliConfig::from_args(std::env::args().collect())?;
 
     let provider = LmStudioProvider::new(config.lm_config.clone());
-    let policy =
-        DefaultApprovalPolicy::default().allow_command(config.verification_command.clone());
+    let verification_command = if config.verification_command == "auto" {
+        recommended_verification_command(&config.project_path).unwrap_or_default()
+    } else {
+        config.verification_command.clone()
+    };
+    let policy = DefaultApprovalPolicy::default().allow_command(verification_command.clone());
     let mut trace = ExecutionTrace::new();
     let mut last_step_count = 0;
 
     println!(
         "Magy\nProject: {}\nVerification: {}\n",
         config.project_path.display(),
-        config.verification_command
+        if verification_command.is_empty() {
+            "static project validation"
+        } else {
+            &verification_command
+        }
     );
 
     // 1. Try to open project, initialize if missing
@@ -66,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             config.project_path.clone(),
             &provider,
             &policy,
-            &config.verification_command,
+            &verification_command,
             &config.system_prompt,
             config.max_steps,
             config.max_verifications,
@@ -108,15 +116,12 @@ impl CliConfig {
     fn from_args(args: Vec<String>) -> Result<Self, String> {
         if args.len() < 2 {
             return Err(
-                "Usage: magy <project-path> [verification-command] [max-steps] [max-verifications]"
+                "Usage: magy <project-path> [verification-command|auto] [max-steps] [max-verifications]"
                     .to_string(),
             );
         }
         let project_path = PathBuf::from(&args[1]);
-        let verification_command = args
-            .get(2)
-            .cloned()
-            .unwrap_or_else(|| "cargo test".to_string());
+        let verification_command = args.get(2).cloned().unwrap_or_else(|| "auto".to_string());
         let max_steps = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10);
         let max_verifications = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(3);
 
