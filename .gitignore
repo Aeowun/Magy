@@ -1,0 +1,5 @@
+# IDE settings
+.idea/
+
+# Rust build artifacts
+target/
