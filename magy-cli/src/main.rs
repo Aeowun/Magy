@@ -32,7 +32,11 @@ change permissions, delete files, or perform unrelated setup unless the active t
 Use run_command only for an allowlisted command that directly advances the active task.
 If a command is denied, choose a different action instead of repeating it.
 All fields (tool, path, content, command) are required. Use null when not applicable.
-When the active task is complete, use task_complete."#;
+Only use task_complete after the requested work has actually been performed and
+no required action was denied or failed. A model assertion is not verification.
+All tool paths are relative to the selected project root; use "index.html", not
+"/index.html". If generic verification is unavailable, report that limitation
+instead of claiming success."#;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CliConfig::from_args(std::env::args().collect())?;

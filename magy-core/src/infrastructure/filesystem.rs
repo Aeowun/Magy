@@ -186,11 +186,14 @@ fn is_link_or_reparse(path: &Path, ft: &std::fs::FileType) -> Result<bool, Error
 }
 
 fn resolve_and_validate(root: &Path, path: &Path) -> Result<PathBuf, Error> {
-    let full_path = if path.is_absolute() {
-        path.to_path_buf()
+    // Tool paths are project-root-relative. Accept a leading slash as a
+    // display-style root marker, but never let it escape the selected root.
+    let relative_path = if path.components().next() == Some(std::path::Component::RootDir) {
+        PathBuf::from(path.to_string_lossy().trim_start_matches(&['/', '\\'][..]))
     } else {
-        root.join(path)
+        path.to_path_buf()
     };
+    let full_path = root.join(relative_path);
 
     if !is_within_boundary(root, &full_path) {
         debug!(path = ?full_path, "Boundary violation");
@@ -238,6 +241,22 @@ mod tests {
         ));
         assert_eq!(
             write_file(&root, &sibling, "fail"),
+            Err(Error::OutsideBoundary)
+        );
+    }
+
+    #[test]
+    fn test_root_style_paths_round_trip_without_escape() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        write_file(&root, Path::new("index.html"), "index").unwrap();
+
+        assert_eq!(
+            read_file(&root, Path::new("/index.html")),
+            Ok("index".to_string())
+        );
+        assert_eq!(
+            read_file(&root, Path::new("../index.html")),
             Err(Error::OutsideBoundary)
         );
     }
@@ -324,6 +343,12 @@ mod tests {
         assert_eq!(files[1], PathBuf::from("a"));
         assert_eq!(files[2], PathBuf::from("a/1.txt"));
         assert_eq!(files[3], PathBuf::from("b"));
+        for path in &files {
+            if !root.join(path).is_file() {
+                continue;
+            }
+            assert_eq!(read_file(&root, path).is_ok(), true);
+        }
 
         // Symlink behavior
         #[cfg(unix)]

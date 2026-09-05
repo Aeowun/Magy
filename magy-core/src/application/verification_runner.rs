@@ -22,8 +22,8 @@ use crate::Error;
 
 /// Selects a conservative verification command from the project files.
 ///
-/// An empty result means the project has no recognized test runner and should
-/// be verified through its static/project-specific checks instead of Cargo.
+/// An empty result means the project has no recognized test runner. Such a
+/// project cannot be declared verified by the generic runner.
 pub fn recommended_verification_command(root: &std::path::Path) -> Option<String> {
     if root.join("Cargo.toml").is_file() {
         Some("cargo test".to_string())
@@ -52,10 +52,13 @@ pub fn run_verification(agent: &Agent, command: &str) -> Result<VerificationResu
     if command.trim().is_empty() {
         return Ok(VerificationResult {
             command: "static project validation".to_string(),
-            passed: true,
-            stdout: "No recognized test runner; file and boundary checks passed.".to_string(),
-            stderr: String::new(),
-            exit_code: Some(0),
+            passed: false,
+            stdout:
+                "No recognized test runner; generic validation cannot prove acceptance criteria."
+                    .to_string(),
+            stderr: "Configure an explicit verification command or add a supported project runner."
+                .to_string(),
+            exit_code: None,
         });
     }
 
@@ -154,7 +157,7 @@ mod tests {
         agent.transition(Event::ActionDone).unwrap();
 
         let result = run_verification(&agent, "").unwrap();
-        assert!(result.passed);
-        assert_eq!(result.exit_code, Some(0));
+        assert!(!result.passed);
+        assert_eq!(result.exit_code, None);
     }
 }

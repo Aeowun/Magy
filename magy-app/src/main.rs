@@ -31,7 +31,11 @@ verification/build command. Prefer read_file, write_file, and list_directory for
 If a command is denied, choose a different action instead of repeating it.
 
 All fields (tool, path, content, command) are required. Use null for fields that do not apply.
-When the active task is complete, use task_complete."#;
+Only use task_complete after the requested work has actually been performed and
+no required action was denied or failed. A model assertion is not verification.
+All tool paths are relative to the selected project root; use "index.html", not
+"/index.html". If generic verification is unavailable, report that limitation
+instead of claiming success."#;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct UiProject {
@@ -289,6 +293,8 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
                 || stop_reason == "Tool execution failed"
                 || stop_reason == "Model stopped without action"
                 || stop_reason == "Maximum steps reached"
+                || stop_reason.starts_with("Verification warning")
+                || stop_reason.starts_with("Task completion rejected")
             {
                 break;
             }

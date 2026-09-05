@@ -65,6 +65,33 @@ pub fn run_execution_cycle(
             .unwrap_or(false);
 
         if is_task_complete {
+            let unresolved_action = trace.steps.iter().any(|previous| {
+                previous
+                    .action_record
+                    .as_ref()
+                    .map(|record| {
+                        matches!(
+                            record.outcome,
+                            ExecutionOutcome::Denied
+                                | ExecutionOutcome::AwaitingApproval
+                                | ExecutionOutcome::Executed(ToolResult::Error(_))
+                        )
+                    })
+                    .unwrap_or(false)
+            });
+            if unresolved_action {
+                let mut rejected_step = step;
+                if let Some(record) = rejected_step.action_record.as_mut() {
+                    record.approval_status = crate::domain::model::ApprovalStatus::Denied;
+                    record.outcome = ExecutionOutcome::Denied;
+                }
+                trace.steps.push(rejected_step);
+                agent.transition(Event::TestsFailed)?;
+                trace.stopped_reason =
+                    "Task completion rejected: unresolved action remains".to_string();
+                continue;
+            }
+
             trace.steps.push(step);
 
             let ver_res = run_verification(agent, verification_command)?;
@@ -245,6 +272,48 @@ mod tests {
             trace.steps[0].action_record.as_ref().unwrap().outcome,
             ExecutionOutcome::AwaitingApproval
         );
+    }
+
+    #[test]
+    fn test_task_complete_rejected_after_denied_required_action() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
+
+        let (mut agent, mut project) = open_project(root.clone()).unwrap();
+        let context = assemble_project_context(root.clone(), project.clone()).unwrap();
+        let plan = plan_execution(&agent, &context).unwrap();
+        select_task(&mut agent, &project, "1").unwrap();
+        let provider = MultiMockProvider {
+            responses: std::cell::RefCell::new(vec![
+                Ok(ModelResponse {
+                    content: "{\"tool\":\"run_command\",\"command\":\"git init\",\"path\":null,\"content\":null}".to_string(),
+                }),
+                Ok(ModelResponse {
+                    content: "{\"tool\":\"task_complete\",\"command\":null,\"path\":null,\"content\":null}".to_string(),
+                }),
+            ]),
+        };
+
+        let mut trace = ExecutionTrace::new();
+        run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            2,
+            1,
+            "",
+            &mut trace,
+        )
+        .unwrap();
+
+        assert_eq!(project.tasks[0].status, TaskStatus::Open);
+        assert!(trace.stopped_reason.starts_with("Task completion rejected"));
+        assert_eq!(trace.steps.len(), 2);
     }
 
     #[test]
