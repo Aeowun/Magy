@@ -30,12 +30,14 @@ pub trait ApprovalPolicy {
 /// A simple deterministic approval policy.
 pub struct DefaultApprovalPolicy {
     allowed_commands: BTreeSet<String>,
+    auto_approve: bool,
 }
 
 impl Default for DefaultApprovalPolicy {
     fn default() -> Self {
         Self {
             allowed_commands: BTreeSet::new(),
+            auto_approve: false,
         }
     }
 }
@@ -43,6 +45,11 @@ impl Default for DefaultApprovalPolicy {
 impl DefaultApprovalPolicy {
     pub fn allow_command(mut self, command: impl Into<String>) -> Self {
         self.allowed_commands.insert(command.into());
+        self
+    }
+
+    pub fn auto_approve(mut self, enabled: bool) -> Self {
+        self.auto_approve = enabled;
         self
     }
 
@@ -57,10 +64,20 @@ impl ApprovalPolicy for DefaultApprovalPolicy {
             ToolRequest::ReadFile { .. } => ApprovalStatus::Approved,
             ToolRequest::ListDirectory { .. } => ApprovalStatus::Approved,
             ToolRequest::DiscoverFiles => ApprovalStatus::Approved,
-            ToolRequest::WriteFile { .. } => ApprovalStatus::Pending,
+            ToolRequest::WriteFile { .. } => {
+                if self.auto_approve {
+                    ApprovalStatus::Approved
+                } else {
+                    ApprovalStatus::Pending
+                }
+            }
             ToolRequest::RunCommand { command } => {
                 if self.allows_command(command) {
-                    ApprovalStatus::Pending
+                    if self.auto_approve {
+                        ApprovalStatus::Approved
+                    } else {
+                        ApprovalStatus::Pending
+                    }
                 } else {
                     ApprovalStatus::Denied
                 }

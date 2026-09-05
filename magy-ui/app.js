@@ -26,6 +26,7 @@ const UI = {
         this.pendingToolRequest = document.getElementById('pending-tool-request');
         this.approveBtn = document.getElementById('approve-btn');
         this.denyBtn = document.getElementById('deny-btn');
+        this.autoApproveTools = document.getElementById('auto-approve-tools');
 
         this.progressBar = document.getElementById('execution-progress');
     },
@@ -35,6 +36,7 @@ const UI = {
         this.startInitBtn.addEventListener('click', () => this.initializeProject());
         this.approveBtn.addEventListener('click', () => this.resolveAction(true));
         this.denyBtn.addEventListener('click', () => this.resolveAction(false));
+        this.autoApproveTools.addEventListener('change', () => this.updateSettings());
     },
 
     async secureFetch(url, options = {}) {
@@ -127,6 +129,21 @@ const UI = {
         await this.secureFetch('/api/run', { method: 'POST' });
     },
 
+    async updateSettings() {
+        try {
+            await this.secureFetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auto_approve_tools: this.autoApproveTools.checked })
+            });
+            this.agentStatus.textContent = this.autoApproveTools.checked
+                ? 'Auto-execute enabled'
+                : 'Approval required';
+        } catch (err) {
+            this.autoApproveTools.checked = !this.autoApproveTools.checked;
+        }
+    },
+
     async resolveAction(approved) {
         this.interactionZone.classList.add('hidden');
         await this.secureFetch('/api/resolve', {
@@ -171,12 +188,22 @@ const UI = {
                 this.progressBar.classList.add('hidden');
                 if (event.data === 'Action requires approval') {
                     this.showApproval();
+                } else if (event.data && event.data !== 'Task completed successfully') {
+                    this.appendSystemMessage(event.data);
                 }
                 break;
             case 'Error':
                 this.showError("Runtime Error", event.data);
                 break;
         }
+    },
+
+    appendSystemMessage(message) {
+        const element = document.createElement('div');
+        element.className = 'activity-item system-message';
+        element.textContent = `Magy stopped: ${message}`;
+        this.feedContainer.appendChild(element);
+        element.scrollIntoView({ behavior: 'smooth' });
     },
 
     appendActivity(step, index) {

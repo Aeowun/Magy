@@ -49,6 +49,7 @@ struct AppState {
     project: Option<Project>,
     trace: ExecutionTrace,
     event_tx: mpsc::UnboundedSender<UiEvent>,
+    auto_approve_tools: bool,
 }
 
 type SharedState = Arc<Mutex<AppState>>;
@@ -64,6 +65,7 @@ async fn main() {
         project: None,
         trace: ExecutionTrace::new(),
         event_tx,
+        auto_approve_tools: false,
     }));
 
     let app = Router::new()
@@ -71,6 +73,7 @@ async fn main() {
         .route("/api/initialize", post(initialize_project))
         .route("/api/run", post(run_agent))
         .route("/api/resolve", post(resolve_action))
+        .route("/api/settings", post(update_settings))
         .route("/api/events", get(events_handler))
         .fallback_service(ServeDir::new("magy-ui"))
         .with_state(state);
@@ -157,6 +160,7 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
     let s = state.lock().await;
     let root = s.root.clone().ok_or("No project loaded").unwrap();
     let event_tx = s.event_tx.clone();
+    let auto_approve_tools = s.auto_approve_tools;
 
     let state_ref = Arc::clone(&state);
 
@@ -197,7 +201,8 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
 
                 let provider = LmStudioProvider::new(config);
                 let policy = DefaultApprovalPolicy::default()
-                    .allow_command("cargo test");
+                    .allow_command("cargo test")
+                    .auto_approve(auto_approve_tools);
                 let res = run_execution_cycle(
                     &mut agent,
                     &mut project,
@@ -256,6 +261,31 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
     });
 
     Json(serde_json::json!({ "status": "started" }))
+}
+
+#[derive(Deserialize)]
+struct SettingsRequest {
+    auto_approve_tools: bool,
+}
+
+async fn update_settings(
+    State(state): State<SharedState>,
+    Json(payload): Json<SettingsRequest>,
+) -> Json<serde_json::Value> {
+    let mut s = state.lock().await;
+    s.auto_approve_tools = payload.auto_approve_tools;
+    let status = if s.auto_approve_tools {
+        "Auto-approve enabled"
+    } else {
+        "Approval required"
+    };
+    s.event_tx
+        .send(UiEvent::AgentStateChanged(status.to_string()))
+        .ok();
+    Json(serde_json::json!({
+        "status": "success",
+        "auto_approve_tools": s.auto_approve_tools
+    }))
 }
 
 #[derive(Deserialize)]
