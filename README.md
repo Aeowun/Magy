@@ -1,27 +1,21 @@
 # Magy
 
-Magy is a local AI software engineering system built around a simple principle:
+Magy is a local AI software engineering system.
 
-> **The AI decides what it wants to do. The runtime decides what it is allowed to do.**
+The model proposes actions. The runtime validates and executes them according to the system's rules.
 
-Magy is designed to help a developer give an AI agent a real software project and let it make useful, verifiable progress inside a controlled environment.
+Magy consists of a Rust core, model-provider interfaces, controlled tools, project state, and a graphical user interface.
 
-The system is built around a Rust core, explicit execution boundaries, replaceable model providers, and controlled tools.
+## Architecture
 
-## Philosophy
-
-Magy is not intended to be an AI that is given unrestricted access to a machine and told to "figure it out."
-
-Instead, the system separates **reasoning** from **authority**.
-
-The model can reason about a project and request actions.
-
-The runtime determines whether those actions are valid, permitted, and safe to execute.
+Magy separates model reasoning from action execution.
 
 ```text
 User
  ↓
-Magy
+Magy App (UI)
+ ↓
+Coordinator
  ├── Project State
  ├── Agent
  ├── Model
@@ -32,270 +26,90 @@ Magy
    Project
 ```
 
-This separation is fundamental to the architecture.
+The model does not directly modify the project. It produces requests that are interpreted and executed by the runtime.
 
-## Architecture
+## Usage
 
-Magy is organized around a small layered core:
+### Requirements
 
-```text
-Application
-    ↓
-Domain
-    ↓
-Infrastructure
-```
-
-### Domain
-
-The domain defines Magy's rules and core concepts.
-
-It contains the models and state required to represent:
-
-* projects
-* project tasks
-* agent state
-* model interactions
-* tool requests and results
-* planning and execution concepts
-
-The domain is intended to remain independent of specific UI frameworks, model providers, and operating-system details.
-
-### Application
-
-The application layer coordinates operations across the domain and infrastructure.
-
-It is responsible for turning higher-level intent into controlled execution while preserving domain rules and state transitions.
-
-### Infrastructure
-
-Infrastructure provides the concrete mechanisms required by the system, including filesystem access and communication with model providers.
-
-Infrastructure is where external systems are integrated without allowing them to define Magy's core behavior.
-
-## Agent Model
-
-Magy's agent is modeled as an explicit state machine.
-
-The general lifecycle is:
+Magy expects a local model server running at:
 
 ```text
-Idle
-  ↓
-Planning
-  ↓
-Executing
-  ↓
-Verifying
-  ↓
-Planning
+http://localhost:1234/v1
 ```
 
-The agent also has explicit mechanisms for:
+LM Studio works by default.
+
+Load a chat/instruct model before starting Magy.
+
+### Run Magy
+
+Start the Magy application:
 
 ```text
-Pause
-Resume
-Stop
-Failure
-Completion
+cargo run -p magy-app
 ```
 
-State transitions are deliberate rather than implicit.
+Then open your browser to `http://localhost:3000`.
 
-This allows the execution engine to reason about what the agent is currently allowed to do and makes invalid transitions observable instead of silently producing inconsistent state.
+### To load a project
 
-## Projects
+1.  Click **Load Project**.
+2.  Select a project directory via the native folder picker. Magy will set this as the project root.
+3.  If the directory is missing a `Project.md`, Magy will ask "What are we building?". Enter your goal, and Magy will generate the project specification for you.
 
-Magy operates on a user-selected project directory.
+### How It Works
 
-The project provides the context in which the agent is allowed to operate.
+Magy reads the project, plans work, and asks the model what to do.
 
-A project is described by a `Project.md` specification containing information such as:
+*   **Read-only actions** (like reading files or listing directories) run automatically.
+*   **Restricted actions** (like writing files or executing commands) require explicit operator approval in the UI.
+*   **Verification**: After changes are made, Magy runs a verification command (configurable, defaults to `cargo test`). If verification fails, the failure output is given back to the model so it can attempt another fix.
 
-```text
-Project
+A task is complete when verification succeeds.
 
-Goal
+## Configuration
 
-Requirements
+Magy uses deterministic bounds found in the coordination logic (and eventually in configuration files):
 
-Constraints
-
-Definition of Done
-
-Tasks
-
-Current Status
-```
-
-The project specification acts as a human-readable source of project intent while the Rust domain model provides the structured representation used by the runtime.
-
-## Context and Planning
-
-Before meaningful work can be performed, Magy needs to understand the project it has been given.
-
-The system therefore separates:
-
-```text
-Project
-   ↓
-Project Context
-   ↓
-Plan
-   ↓
-Execution
-```
-
-Project context represents the relevant project structure and information available to the agent.
-
-Planning converts the project's current state into actionable work while preserving deterministic project semantics.
-
-The model may participate in reasoning, but the runtime remains responsible for enforcing project boundaries and execution rules.
+*   **max-steps**: Maximum reasoning steps per task execution cycle.
+*   **max-verifications**: Maximum verification retries per task.
 
 ## Models
 
-Magy treats AI models as replaceable components.
+Models are accessed through a provider interface, allowing different local model backends to be used without changing the core agent.
 
-The core communicates with models through a provider abstraction rather than embedding one specific model implementation into the agent itself.
-
-Conceptually:
-
-```text
-Agent
-   ↓
-Model Provider
-   ↓
-Local Model Runtime
-```
-
-This allows different local model backends to be introduced without redesigning the agent architecture.
+Magy utilizes **JSON Schema enforcement** to ensure model tool calls are syntactically valid. To ensure reliability with small local models, Magy uses a **flat discriminator schema** that avoids the semantic degradation often caused by complex branching.
 
 ## Tools
 
-Models do not directly manipulate the filesystem.
-
-Instead, the model requests an operation through a controlled tool interface:
+Magy currently provides:
 
 ```text
-Model
-  ↓
-Tool Request
-  ↓
-Magy Runtime
-  ↓
-Tool
-  ↓
-Tool Result
-  ↓
-Model
+read_file
+write_file
+list_directory
+discover_files
+run_command
+task_complete
 ```
 
-Tools provide an explicit authority boundary between what the model **wants** to do and what Magy **allows** it to do.
-
-This is intended to make model actions inspectable, testable, and enforceable.
-
-## Safety Boundary
-
-A selected project directory is treated as a security boundary.
-
-Operations performed through Magy's filesystem runtime are constrained to that project.
-
-The runtime is responsible for handling issues such as:
-
-* path traversal
-* canonicalization
-* sibling-prefix collisions
-* symbolic links
-* junctions and other reparse points
-* controlled recursive discovery
-
-Higher-level code should use these protected operations rather than bypassing them.
-
-The security model is intentionally explicit about its guarantees and limitations. Magy does not claim that filesystem path validation eliminates every possible race condition between validation and use.
-
-## Determinism
-
-Deterministic behavior is a core design goal.
-
-The same inputs should produce predictable results wherever practical.
-
-This applies to areas such as:
-
-* project parsing
-* project serialization
-* agent state transitions
-* task identity
-* task selection
-* project discovery
-* planning
-* tool dispatch
-* persistence
-
-Determinism makes the system easier to test, debug, reproduce, and trust.
-
-## Verification
-
-Magy is designed around the principle that performing an action is not the same thing as proving that the work succeeded.
-
-The intended execution model is:
-
-```text
-Execute
-   ↓
-Verify
-   ↓
-Complete
-```
-
-Verification is therefore treated as part of the execution architecture rather than as an optional reporting step.
-
-## Development
-
-Magy is under active development.
-
-The project is intentionally being built incrementally, with emphasis on:
-
-* explicit architecture
-* deterministic behavior
-* controlled execution
-* strong invariants
-* testable boundaries
-* replaceable integrations
-* small, understandable core components
-
-The architecture and public interfaces may change during development.
-
-Development history and implementation milestones are maintained separately in [`CHANGELOG.md`](CHANGELOG.md).
-
-## Repository
-
-The repository contains the Magy Rust workspace and its core libraries.
-
-The core follows the layered architecture described above rather than coupling the project directly to a desktop UI or a specific model provider.
+Tool execution is strictly constrained to the selected project directory.
 
 ## Building
 
-Build the project with:
-
-```bash
+```text
 cargo build
 ```
 
-Run the test suite with:
+Run the tests:
 
-```bash
+```text
 cargo test
-```
-
-For core-library development:
-
-```bash
-cargo test -p magy-core
 ```
 
 ## License
 
-Magy is free software licensed under the **GNU General Public License v3.0**.
+Magy is licensed under the GNU General Public License v3.0.
 
-See [`LICENSE`](LICENSE) for the full license text.
+See `LICENSE` for the full license text.

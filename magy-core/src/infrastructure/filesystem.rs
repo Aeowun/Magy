@@ -37,7 +37,10 @@ pub fn read_file(root: &Path, path: &Path) -> Result<String, Error> {
     debug!(path = ?full_path, "Reading file");
     fs::read_to_string(full_path).map_err(|e| {
         error!(error = ?e, "Read error");
-        Error::Io
+        match e.kind() {
+            std::io::ErrorKind::NotFound => Error::FileNotFound,
+            _ => Error::Io,
+        }
     })
 }
 
@@ -317,7 +320,7 @@ mod tests {
 
             // Use cmd to create junction as it typically doesn't require admin rights
             let output = std::process::Command::new("cmd")
-                .args(&["/C", "mklink", "/J", junction.to_str().unwrap(), target.to_str().unwrap()])
+                .args(["/C", "mklink", "/J", junction.to_str().unwrap(), target.to_str().unwrap()])
                 .output()
                 .unwrap();
 

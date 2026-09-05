@@ -18,14 +18,15 @@
 use crate::Error;
 use tracing::debug;
 use std::path::{Path, PathBuf};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
     pub description: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum State {
     Idle,
     Planning,
@@ -58,13 +59,19 @@ pub struct Agent {
     task: Option<Task>,
 }
 
-impl Agent {
-    pub fn new() -> Self {
+impl Default for Agent {
+    fn default() -> Self {
         Self {
             state: State::Idle,
             root: None,
             task: None,
         }
+    }
+}
+
+impl Agent {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn state(&self) -> &State {

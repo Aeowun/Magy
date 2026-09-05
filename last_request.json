@@ -1,0 +1,62 @@
+{
+  "model": "google/gemma-4-e4b",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are Magy, an autonomous AI agent. To interact with the project, you MUST output a single JSON code block matching the strict schema.\nAll fields (tool, path, content, command) are REQUIRED. Use null if a field does not apply to the selected tool.\n\nExample for write_file:\n```json\n{\"tool\": \"write_file\", \"path\": \"src/main.rs\", \"content\": \"...\", \"command\": null}\n```\n\nExample for discover_files:\n```json\n{\"tool\": \"discover_files\", \"path\": null, \"content\": null, \"command\": null}\n```\n\nAvailable tools: read_file, write_file, list_directory, discover_files, run_command, task_complete.\nWhen the task is done, use 'task_complete'."
+    },
+    {
+      "role": "user",
+      "content": "Project Name: Demo Project\nGoal: Modify the program so the test passes.\n\nActive Task: [1] Make the program return 42.\n\nCurrent Plan:\n- Make the program return 42.\n\nFiles:\n--- Cargo.toml ---\n[package]\r\nname = \"magy-test\"\r\nversion = \"0.1.0\"\r\nedition = \"2021\"\r\n\r\n[dependencies]\r\n\n\n--- Project.md ---\nDemo Project\r\n\r\nGoal\r\nModify the program so the test passes.\r\n\r\nTasks\r\n- [ ] Make the program return 42.\r\n\n\n(Directory) src\n--- src\\main.rs ---\nfn get_answer() -> i32 {\n    42\n}\n\nfn main() {\n    println!(\"The answer is: {}\", get_answer());\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn test_answer() {\n        assert_eq!(get_answer(), 42);\n    }\n}\n\n\nExecution History:\nModel: {\"command\": null, \"content\": \"fn get_answer() -> i32 {\\n    42\\n}\\n\\nfn main() {\\n    println!(\\\"The answer is: {}\\\", get_answer());\\n}\\n\\n#[cfg(test)]\\nmod tests {\\n    use super::*;\\n\\n    #[test]\\n    fn test_answer() {\\n        assert_eq!(get_answer(), 42);\\n    }\\n}\", \"path\": \"src/main.rs\", \"tool\": \"write_file\"}\nAction: WriteFile { path: \"src/main.rs\", content: \"fn get_answer() -> i32 {\\n    42\\n}\\n\\nfn main() {\\n    println!(\\\"The answer is: {}\\\", get_answer());\\n}\\n\\n#[cfg(test)]\\nmod tests {\\n    use super::*;\\n\\n    #[test]\\n    fn test_answer() {\\n        assert_eq!(get_answer(), 42);\\n    }\\n}\" }\nOutcome: Executed(Success)\n\n"
+    }
+  ],
+  "temperature": 0.0,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "tool_request",
+      "strict": true,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool": {
+            "enum": [
+              "read_file",
+              "write_file",
+              "list_directory",
+              "discover_files",
+              "run_command",
+              "task_complete"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool",
+          "path",
+          "content",
+          "command"
+        ],
+        "type": "object"
+      }
+    }
+  }
+}

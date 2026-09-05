@@ -15,6 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod fs;
+pub mod filesystem;
 pub mod model;
-pub mod cmd;
+pub mod command;

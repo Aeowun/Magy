@@ -17,7 +17,7 @@
 
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
-use crate::infrastructure::fs::DirEntry;
+use crate::infrastructure::filesystem::DirEntry;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tool", rename_all = "snake_case")]
@@ -27,6 +27,37 @@ pub enum ToolRequest {
     ListDirectory { path: PathBuf },
     DiscoverFiles,
     RunCommand { command: String },
+    TaskComplete,
+}
+
+/// A flat representation of a tool request used for structured output models.
+/// All fields are present, using null when they don't apply.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FlatToolRequest {
+    pub tool: String,
+    pub path: Option<PathBuf>,
+    pub content: Option<String>,
+    pub command: Option<String>,
+}
+
+impl FlatToolRequest {
+    pub fn to_tool_request(self) -> Option<ToolRequest> {
+        match self.tool.as_str() {
+            "read_file" => self.path.map(|path| ToolRequest::ReadFile { path }),
+            "write_file" => {
+                if let (Some(path), Some(content)) = (self.path, self.content) {
+                    Some(ToolRequest::WriteFile { path, content })
+                } else {
+                    None
+                }
+            }
+            "list_directory" => self.path.map(|path| ToolRequest::ListDirectory { path }),
+            "discover_files" => Some(ToolRequest::DiscoverFiles),
+            "run_command" => self.command.map(|command| ToolRequest::RunCommand { command }),
+            "task_complete" => Some(ToolRequest::TaskComplete),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

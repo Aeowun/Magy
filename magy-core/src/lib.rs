@@ -21,16 +21,22 @@ pub mod infrastructure;
 pub mod domain;
 pub mod application;
 
-pub use infrastructure::fs::{read_file, write_file, list_directory, discover_files, DirEntry};
+pub use infrastructure::filesystem::{read_file, write_file, list_directory, discover_files, DirEntry};
 pub use domain::project::{ProjectContext, FileContext, FileContent, Project, ProjectTask, TaskStatus, ProjectPlan};
 pub use domain::tool::{ToolRequest, ToolResult, CommandOutput};
-pub use domain::model::{ModelProvider, ModelRequest, ModelResponse, ModelAction, StepResult};
-pub use infrastructure::model::{LmStudioProvider, LmStudioConfig};
-pub use application::project::{
-    open_project, save_project, select_task, complete_current_task,
-    assemble_project_context, plan_execution, execute_tool,
-    run_reasoning_step, run_execution_cycle, ExecutionTrace
+pub use domain::model::{
+    ModelProvider, ModelRequest, ModelResponse, ModelAction, StepResult,
+    ApprovalStatus, ExecutionOutcome, ActionRecord, ExecutionTrace, RunResult
 };
+pub use infrastructure::model::{LmStudioProvider, LmStudioConfig};
+pub use application::{
+    open_project, save_project, initialize_project, select_task, complete_current_task,
+    assemble_project_context, plan_execution, execute_tool,
+    run_reasoning_step, run_execution_cycle, resolve_pending_action,
+    run_project_workflow, ApprovalPolicy, DefaultApprovalPolicy
+};
+
+use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Error {
@@ -38,6 +44,8 @@ pub enum Error {
     OutsideBoundary,
     /// A generic filesystem error occurred.
     Io,
+    /// The requested file was not found.
+    FileNotFound,
     /// An invalid state transition was requested for the agent.
     InvalidStateTransition,
     /// The project goal section is missing.
@@ -50,6 +58,18 @@ pub enum Error {
     TaskAlreadyDone,
     /// No task is currently active for the agent.
     NoActiveTask,
+    /// The requested action was not found in the trace.
+    ActionNotFound,
+    /// The requested action is not in a pending state.
+    ActionNotPending,
     /// An error occurred while communicating with the model provider.
     ModelError(String),
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for Error {}

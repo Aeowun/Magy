@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magy — Local AI Software Engineering</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app" class="state-startup">
+        <!-- Startup View -->
+        <div id="startup-view" class="overlay">
+            <div class="startup-card">
+                <h1>Magy</h1>
+                <p class="tagline">Local AI Software Engineering System</p>
+
+                <div id="init-zone" class="hidden">
+                    <p>No Project.md found. What is your goal?</p>
+                    <textarea id="goal-input" placeholder="e.g. Build a small Rust command-line calculator." style="width: 100%; height: 100px; background: #000; color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; margin-bottom: 1rem; border-radius: 4px;"></textarea>
+                    <div class="actions">
+                        <button id="start-init-btn" class="primary">Initialize Project</button>
+                    </div>
+                </div>
+
+                <div id="startup-actions">
+                    <div class="requirements-check">
+                        <div class="check-item pass">Model Server: http://localhost:1234/v1</div>
+                        <div class="check-item pass">Model: nvidia/nemotron-3-nano-4b</div>
+                    </div>
+
+                    <div class="actions">
+                        <button id="load-project-btn" class="primary">Load Project</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Workspace -->
+        <div id="workspace" class="hidden">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <header class="project-header">
+                    <h2 id="project-name">magy-test</h2>
+                    <p id="project-goal">Modify the program so the test passes.</p>
+                    <div class="status-badge" id="agent-status">Idle</div>
+                </header>
+
+                <nav class="task-list-container">
+                    <h3>Tasks</h3>
+                    <ul id="task-list">
+                        <!-- Tasks will be injected here -->
+                    </ul>
+                </nav>
+
+                <footer class="sidebar-footer">
+                    <div class="config-summary">
+                        <span>Steps: 10</span>
+                        <span>Verifies: 3</span>
+                    </div>
+                </footer>
+            </aside>
+
+            <!-- Activity Feed -->
+            <main class="activity-feed">
+                <div id="feed-container">
+                    <!-- Activity items will be injected here -->
+                </div>
+
+                <!-- Interaction Zone -->
+                <div id="interaction-zone" class="hidden">
+                    <div class="approval-card">
+                        <div class="approval-header">Action Requires Approval</div>
+                        <div class="approval-body">
+                            <pre id="pending-tool-request"></pre>
+                        </div>
+                        <div class="approval-actions">
+                            <button id="deny-btn" class="secondary">Deny</button>
+                            <button id="approve-btn" class="primary">Approve</button>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Global Progress Bar -->
+        <div id="execution-progress" class="progress-bar-container hidden">
+            <div class="progress-bar-fill"></div>
+            <div class="progress-text">Executing Reasoning Step...</div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

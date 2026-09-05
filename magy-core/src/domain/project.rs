@@ -16,22 +16,23 @@
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
 use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
 use crate::Error;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TaskStatus {
     Open,
     Done,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectTask {
     pub id: String,
     pub description: String,
     pub status: TaskStatus,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     pub name: String,
     pub goal: String,
@@ -42,26 +43,26 @@ pub struct Project {
     pub current_status: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FileContent {
     Text(String),
     Directory,
     Unreadable(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FileContext {
     pub path: PathBuf,
     pub content: FileContent,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectContext {
     pub project: Project,
     pub files: Vec<FileContext>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectPlan {
     pub tasks: Vec<ProjectTask>,
 }
@@ -117,18 +118,18 @@ pub fn parse_project_md(content: &str) -> Result<Project, Error> {
             ParserSection::Goal => goal_lines.push(line),
             ParserSection::CurrentStatus => status_lines.push(line),
             ParserSection::Requirements => {
-                if trimmed.starts_with("- ") {
-                    requirements.push(trimmed[2..].to_string());
+                if let Some(stripped) = trimmed.strip_prefix("- ") {
+                    requirements.push(stripped.to_string());
                 }
             }
             ParserSection::Constraints => {
-                if trimmed.starts_with("- ") {
-                    constraints.push(trimmed[2..].to_string());
+                if let Some(stripped) = trimmed.strip_prefix("- ") {
+                    constraints.push(stripped.to_string());
                 }
             }
             ParserSection::DefinitionOfDone => {
-                if trimmed.starts_with("- ") {
-                    dod.push(trimmed[2..].to_string());
+                if let Some(stripped) = trimmed.strip_prefix("- ") {
+                    dod.push(stripped.to_string());
                 }
             }
             ParserSection::Tasks => {
