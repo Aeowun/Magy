@@ -15,12 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
-use crate::Error;
-use crate::domain::project::ProjectContext;
 use crate::domain::agent::Task;
+use crate::domain::project::ProjectContext;
 use crate::domain::project::ProjectPlan;
 use crate::domain::tool::{ToolRequest, ToolResult};
+use crate::Error;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ApprovalStatus {

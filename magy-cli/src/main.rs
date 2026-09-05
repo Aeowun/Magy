@@ -15,23 +15,28 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
+use magy_core::{
+    open_project, resolve_pending_action, run_project_workflow, select_task, ApprovalStatus,
+    DefaultApprovalPolicy, ExecutionTrace, LmStudioConfig, LmStudioProvider, RunResult,
+    ToolRequest,
+};
 use std::io::{self, Write};
 use std::path::PathBuf;
-use magy_core::{
-    run_project_workflow, resolve_pending_action, open_project, select_task,
-    ExecutionTrace, RunResult, LmStudioProvider, LmStudioConfig,
-    DefaultApprovalPolicy, ApprovalStatus, ToolRequest
-};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CliConfig::from_args(std::env::args().collect())?;
 
     let provider = LmStudioProvider::new(config.lm_config.clone());
-    let policy = DefaultApprovalPolicy;
+    let policy =
+        DefaultApprovalPolicy::default().allow_command(config.verification_command.clone());
     let mut trace = ExecutionTrace::new();
     let mut last_step_count = 0;
 
-    println!("Magy\nProject: {}\nVerification: {}\n", config.project_path.display(), config.verification_command);
+    println!(
+        "Magy\nProject: {}\nVerification: {}\n",
+        config.project_path.display(),
+        config.verification_command
+    );
 
     // 1. Try to open project, initialize if missing
     match open_project(config.project_path.clone()) {
@@ -60,7 +65,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         display_new_steps(&trace, &mut last_step_count);
 
         if result.project_completed {
-            println!("\nProject complete. Tasks completed: {}", result.completed_task_ids.len());
+            println!(
+                "\nProject complete. Tasks completed: {}",
+                result.completed_task_ids.len()
+            );
             break;
         }
 
@@ -88,10 +96,16 @@ struct CliConfig {
 impl CliConfig {
     fn from_args(args: Vec<String>) -> Result<Self, String> {
         if args.len() < 2 {
-            return Err("Usage: magy <project-path> [verification-command] [max-steps] [max-verifications]".to_string());
+            return Err(
+                "Usage: magy <project-path> [verification-command] [max-steps] [max-verifications]"
+                    .to_string(),
+            );
         }
         let project_path = PathBuf::from(&args[1]);
-        let verification_command = args.get(2).cloned().unwrap_or_else(|| "cargo test".to_string());
+        let verification_command = args
+            .get(2)
+            .cloned()
+            .unwrap_or_else(|| "cargo test".to_string());
         let max_steps = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10);
         let max_verifications = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(3);
 
@@ -135,22 +149,42 @@ fn display_new_steps(trace: &ExecutionTrace, last_count: &mut usize) {
             }
         }
         if let Some(ver) = &step.verification {
-            println!("Verification: {}", if ver.passed { "PASSED" } else { "FAILED" });
+            println!(
+                "Verification: {}",
+                if ver.passed { "PASSED" } else { "FAILED" }
+            );
             if !ver.passed {
-                println!("Exit Code: {:?}\nOutput:\n{}{}", ver.exit_code, ver.stdout, ver.stderr);
+                println!(
+                    "Exit Code: {:?}\nOutput:\n{}{}",
+                    ver.exit_code, ver.stdout, ver.stderr
+                );
             }
         }
     }
     *last_count = trace.steps.len();
 }
 
-fn handle_approval(config: &CliConfig, result: &RunResult, trace: &mut ExecutionTrace) -> io::Result<()> {
-    let (idx, record) = trace.steps.iter().enumerate()
-        .find_map(|(i, s)| s.action_record.as_ref()
-            .filter(|r| r.approval_status == ApprovalStatus::Pending).map(|r| (i, r)))
+fn handle_approval(
+    config: &CliConfig,
+    result: &RunResult,
+    trace: &mut ExecutionTrace,
+) -> io::Result<()> {
+    let (idx, record) = trace
+        .steps
+        .iter()
+        .enumerate()
+        .find_map(|(i, s)| {
+            s.action_record
+                .as_ref()
+                .filter(|r| r.approval_status == ApprovalStatus::Pending)
+                .map(|r| (i, r))
+        })
         .expect("Pending action missing");
 
-    println!("\nAction requires approval\nTool: {:?}\nApprove? [y/N]: ", record.request);
+    println!(
+        "\nAction requires approval\nTool: {:?}\nApprove? [y/N]: ",
+        record.request
+    );
     io::stdout().flush()?;
 
     let mut input = String::new();
@@ -164,7 +198,14 @@ fn handle_approval(config: &CliConfig, result: &RunResult, trace: &mut Execution
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{:?}", e)))?;
         resolve_pending_action(&agent, trace, idx, approved)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{:?}", e)))?;
-        println!("Action {}.", if approved { "approved and executed" } else { "denied" });
+        println!(
+            "Action {}.",
+            if approved {
+                "approved and executed"
+            } else {
+                "denied"
+            }
+        );
     }
     Ok(())
 }
@@ -175,7 +216,11 @@ mod tests {
 
     #[test]
     fn test_config_parsing() {
-        let args = vec!["magy".to_string(), "./path".to_string(), "test-cmd".to_string()];
+        let args = vec![
+            "magy".to_string(),
+            "./path".to_string(),
+            "test-cmd".to_string(),
+        ];
         let config = CliConfig::from_args(args).unwrap();
         assert_eq!(config.project_path, PathBuf::from("./path"));
         assert_eq!(config.verification_command, "test-cmd");

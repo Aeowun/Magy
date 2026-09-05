@@ -15,9 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::Error;
 use crate::domain::agent::{Agent, State};
 use crate::domain::project::{ProjectContext, ProjectPlan, TaskStatus};
+use crate::Error;
 
 /// Produces a deterministic execution plan from the project context.
 pub fn plan_execution(agent: &Agent, context: &ProjectContext) -> Result<ProjectPlan, Error> {
@@ -25,24 +25,25 @@ pub fn plan_execution(agent: &Agent, context: &ProjectContext) -> Result<Project
         return Err(Error::InvalidStateTransition);
     }
 
-    let open_tasks: Vec<_> = context.project.tasks.iter()
+    let open_tasks: Vec<_> = context
+        .project
+        .tasks
+        .iter()
         .filter(|t| t.status == TaskStatus::Open)
         .cloned()
         .collect();
 
-    Ok(ProjectPlan {
-        tasks: open_tasks,
-    })
+    Ok(ProjectPlan { tasks: open_tasks })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::context_assembly::assemble_project_context;
+    use crate::application::project_lifecycle::open_project;
+    use crate::domain::project::Project;
     use std::fs;
     use tempfile::tempdir;
-    use crate::domain::project::Project;
-    use crate::application::project_lifecycle::open_project;
-    use crate::application::context_assembly::assemble_project_context;
 
     #[test]
     fn test_plan_execution() {

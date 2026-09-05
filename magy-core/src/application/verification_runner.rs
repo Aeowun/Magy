@@ -15,18 +15,15 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::Error;
 use crate::domain::agent::{Agent, State};
 use crate::domain::model::VerificationResult;
 use crate::infrastructure::command::run_project_command;
+use crate::Error;
 
 /// Runs the verification command for the project.
 ///
 /// The agent must be in the Verifying state.
-pub fn run_verification(
-    agent: &Agent,
-    command: &str,
-) -> Result<VerificationResult, Error> {
+pub fn run_verification(agent: &Agent, command: &str) -> Result<VerificationResult, Error> {
     if agent.state() != &State::Verifying {
         return Err(Error::InvalidStateTransition);
     }
@@ -49,8 +46,8 @@ pub fn run_verification(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use crate::domain::agent::{Agent, Event, Task};
+    use tempfile::tempdir;
 
     #[test]
     fn test_run_verification_pass() {
@@ -59,7 +56,12 @@ mod tests {
 
         let mut agent = Agent::new();
         agent.transition(Event::Start(root)).unwrap();
-        agent.transition(Event::TaskSelected(Task { id: "1".to_string(), description: "T".to_string() })).unwrap();
+        agent
+            .transition(Event::TaskSelected(Task {
+                id: "1".to_string(),
+                description: "T".to_string(),
+            }))
+            .unwrap();
         agent.transition(Event::ActionDone).unwrap();
         assert_eq!(agent.state(), &State::Verifying);
 
@@ -75,7 +77,12 @@ mod tests {
 
         let mut agent = Agent::new();
         agent.transition(Event::Start(root)).unwrap();
-        agent.transition(Event::TaskSelected(Task { id: "1".to_string(), description: "T".to_string() })).unwrap();
+        agent
+            .transition(Event::TaskSelected(Task {
+                id: "1".to_string(),
+                description: "T".to_string(),
+            }))
+            .unwrap();
         agent.transition(Event::ActionDone).unwrap();
 
         let cmd = if cfg!(windows) { "exit 1" } else { "false" };

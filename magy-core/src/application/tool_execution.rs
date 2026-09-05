@@ -17,8 +17,8 @@
 
 use crate::domain::agent::{Agent, State};
 use crate::domain::tool::{ToolRequest, ToolResult};
-use crate::infrastructure::filesystem::{read_file, write_file, list_directory, discover_files};
 use crate::infrastructure::command::run_project_command;
+use crate::infrastructure::filesystem::{discover_files, list_directory, read_file, write_file};
 
 /// Executes a tool request within the project boundary.
 pub fn execute_tool(agent: &Agent, request: ToolRequest) -> ToolResult {
@@ -32,48 +32,40 @@ pub fn execute_tool(agent: &Agent, request: ToolRequest) -> ToolResult {
     };
 
     match request {
-        ToolRequest::ReadFile { path } => {
-            match read_file(root, &path) {
-                Ok(content) => ToolResult::Text(content),
-                Err(e) => ToolResult::Error(format!("Read error: {:?}", e)),
-            }
-        }
-        ToolRequest::WriteFile { path, content } => {
-            match write_file(root, &path, &content) {
-                Ok(()) => ToolResult::Success,
-                Err(e) => ToolResult::Error(format!("Write error: {:?}", e)),
-            }
-        }
-        ToolRequest::ListDirectory { path } => {
-            match list_directory(root, &path) {
-                Ok(entries) => ToolResult::Entries(entries),
-                Err(e) => ToolResult::Error(format!("List error: {:?}", e)),
-            }
-        }
-        ToolRequest::DiscoverFiles => {
-            match discover_files(root) {
-                Ok(paths) => ToolResult::Paths(paths),
-                Err(e) => ToolResult::Error(format!("Discovery error: {:?}", e)),
-            }
-        }
-        ToolRequest::RunCommand { command } => {
-            match run_project_command(root, &command) {
-                Ok(out) => ToolResult::Command(out),
-                Err(e) => ToolResult::Error(format!("Command error: {:?}", e)),
-            }
-        }
-        ToolRequest::TaskComplete => ToolResult::Error("TaskComplete is a control signal and cannot be executed as a tool".to_string()),
+        ToolRequest::ReadFile { path } => match read_file(root, &path) {
+            Ok(content) => ToolResult::Text(content),
+            Err(e) => ToolResult::Error(format!("Read error: {:?}", e)),
+        },
+        ToolRequest::WriteFile { path, content } => match write_file(root, &path, &content) {
+            Ok(()) => ToolResult::Success,
+            Err(e) => ToolResult::Error(format!("Write error: {:?}", e)),
+        },
+        ToolRequest::ListDirectory { path } => match list_directory(root, &path) {
+            Ok(entries) => ToolResult::Entries(entries),
+            Err(e) => ToolResult::Error(format!("List error: {:?}", e)),
+        },
+        ToolRequest::DiscoverFiles => match discover_files(root) {
+            Ok(paths) => ToolResult::Paths(paths),
+            Err(e) => ToolResult::Error(format!("Discovery error: {:?}", e)),
+        },
+        ToolRequest::RunCommand { command } => match run_project_command(root, &command) {
+            Ok(out) => ToolResult::Command(out),
+            Err(e) => ToolResult::Error(format!("Command error: {:?}", e)),
+        },
+        ToolRequest::TaskComplete => ToolResult::Error(
+            "TaskComplete is a control signal and cannot be executed as a tool".to_string(),
+        ),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-    use std::fs;
-    use tempfile::tempdir;
     use crate::application::project_lifecycle::open_project;
     use crate::application::task_lifecycle::select_task;
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::tempdir;
 
     #[test]
     fn test_execute_tool_read_file() {
@@ -85,7 +77,9 @@ mod tests {
         let (mut agent, project) = open_project(root.clone()).unwrap();
         select_task(&mut agent, &project, "1").unwrap();
 
-        let request = ToolRequest::ReadFile { path: PathBuf::from("hello.txt") };
+        let request = ToolRequest::ReadFile {
+            path: PathBuf::from("hello.txt"),
+        };
         let result = execute_tool(&agent, request);
 
         assert_eq!(result, ToolResult::Text("world".to_string()));
@@ -102,12 +96,15 @@ mod tests {
 
         let request = ToolRequest::WriteFile {
             path: PathBuf::from("new.txt"),
-            content: "new content".to_string()
+            content: "new content".to_string(),
         };
         let result = execute_tool(&agent, request);
 
         assert_eq!(result, ToolResult::Success);
-        assert_eq!(fs::read_to_string(root.join("new.txt")).unwrap(), "new content");
+        assert_eq!(
+            fs::read_to_string(root.join("new.txt")).unwrap(),
+            "new content"
+        );
     }
 
     #[test]
@@ -120,7 +117,9 @@ mod tests {
         let (mut agent, project) = open_project(root.clone()).unwrap();
         select_task(&mut agent, &project, "1").unwrap();
 
-        let request = ToolRequest::ListDirectory { path: PathBuf::from(".") };
+        let request = ToolRequest::ListDirectory {
+            path: PathBuf::from("."),
+        };
         let result = execute_tool(&agent, request);
 
         if let ToolResult::Entries(entries) = result {
@@ -159,7 +158,9 @@ mod tests {
         let (mut agent, project) = open_project(root.clone()).unwrap();
         select_task(&mut agent, &project, "1").unwrap();
 
-        let request = ToolRequest::RunCommand { command: "echo executed".to_string() };
+        let request = ToolRequest::RunCommand {
+            command: "echo executed".to_string(),
+        };
         let result = execute_tool(&agent, request);
 
         if let ToolResult::Command(out) = result {
@@ -175,6 +176,9 @@ mod tests {
         let agent = Agent::new();
         let request = ToolRequest::DiscoverFiles;
         let result = execute_tool(&agent, request);
-        assert_eq!(result, ToolResult::Error("Agent is not in Executing state".to_string()));
+        assert_eq!(
+            result,
+            ToolResult::Error("Agent is not in Executing state".to_string())
+        );
     }
 }

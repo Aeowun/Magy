@@ -15,10 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
+use crate::domain::project::{FileContent, FileContext, Project, ProjectContext};
+use crate::infrastructure::filesystem::{discover_files, read_file};
 use crate::Error;
-use crate::domain::project::{Project, ProjectContext, FileContext, FileContent};
-use crate::infrastructure::filesystem::{read_file, discover_files};
+use std::path::PathBuf;
 
 /// Assembles the complete project context: model and file tree with content.
 pub fn assemble_project_context(root: PathBuf, project: Project) -> Result<ProjectContext, Error> {
@@ -46,19 +46,16 @@ pub fn assemble_project_context(root: PathBuf, project: Project) -> Result<Proje
         });
     }
 
-    Ok(ProjectContext {
-        project,
-        files,
-    })
+    Ok(ProjectContext { project, files })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::project_lifecycle::open_project;
     use std::fs;
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;
-    use crate::application::project_lifecycle::open_project;
 
     #[test]
     fn test_assemble_project_context() {
@@ -92,7 +89,11 @@ mod tests {
         let (_, project) = open_project(root.clone()).unwrap();
         let context = assemble_project_context(root, project).unwrap();
 
-        let bin_entry = context.files.iter().find(|f| f.path == Path::new("binary.bin")).unwrap();
+        let bin_entry = context
+            .files
+            .iter()
+            .find(|f| f.path == Path::new("binary.bin"))
+            .unwrap();
         assert!(matches!(bin_entry.content, FileContent::Unreadable(_)));
     }
 }

@@ -15,9 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 use crate::infrastructure::filesystem::DirEntry;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tool", rename_all = "snake_case")]
@@ -53,7 +53,9 @@ impl FlatToolRequest {
             }
             "list_directory" => self.path.map(|path| ToolRequest::ListDirectory { path }),
             "discover_files" => Some(ToolRequest::DiscoverFiles),
-            "run_command" => self.command.map(|command| ToolRequest::RunCommand { command }),
+            "run_command" => self
+                .command
+                .map(|command| ToolRequest::RunCommand { command }),
             "task_complete" => Some(ToolRequest::TaskComplete),
             _ => None,
         }

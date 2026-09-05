@@ -15,13 +15,17 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
+use crate::boundary::{is_within_boundary, validate_boundary};
+use crate::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, error};
-use crate::boundary::{is_within_boundary, validate_boundary};
-use crate::Error;
 
 use serde::{Deserialize, Serialize};
+
+pub const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_DIRECTORY_ENTRIES: usize = 10_000;
+pub const MAX_DISCOVERED_ENTRIES: usize = 100_000;
 
 /// A directory entry representation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -35,6 +39,16 @@ pub fn read_file(root: &Path, path: &Path) -> Result<String, Error> {
     let full_path = resolve_and_validate(root, path)?;
 
     debug!(path = ?full_path, "Reading file");
+    let metadata = fs::metadata(&full_path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            Error::FileNotFound
+        } else {
+            Error::Io
+        }
+    })?;
+    if metadata.len() > MAX_FILE_BYTES as u64 {
+        return Err(Error::Io);
+    }
     fs::read_to_string(full_path).map_err(|e| {
         error!(error = ?e, "Read error");
         match e.kind() {
@@ -47,22 +61,35 @@ pub fn read_file(root: &Path, path: &Path) -> Result<String, Error> {
 /// Safely writes a file within the project boundary.
 pub fn write_file(root: &Path, path: &Path, content: &str) -> Result<(), Error> {
     let full_path = resolve_and_validate(root, path)?;
+    if content.len() > MAX_FILE_BYTES {
+        return Err(Error::Io);
+    }
 
     debug!(path = ?full_path, "Writing file");
     if let Some(parent) = full_path.parent() {
         if !parent.exists() {
-             debug!(parent = ?parent, "Creating missing parent directories");
-             fs::create_dir_all(parent).map_err(|e| {
-                 error!(error = ?e, "Dir creation error");
-                 Error::Io
-             })?;
+            debug!(parent = ?parent, "Creating missing parent directories");
+            fs::create_dir_all(parent).map_err(|e| {
+                error!(error = ?e, "Dir creation error");
+                Error::Io
+            })?;
         }
     }
 
-    fs::write(full_path, content).map_err(|e| {
-        error!(error = ?e, "Write error");
-        Error::Io
-    })
+    let file_name = full_path.file_name().ok_or(Error::Io)?.to_string_lossy();
+    let temp_name = format!(".{}.magy-{}.tmp", file_name, std::process::id());
+    let temp_path = full_path.with_file_name(temp_name);
+    let mut temp = fs::File::create(&temp_path).map_err(|_| Error::Io)?;
+    use std::io::Write;
+    temp.write_all(content.as_bytes()).map_err(|_| Error::Io)?;
+    temp.sync_all().map_err(|_| Error::Io)?;
+    drop(temp);
+    if let Err(error) = fs::rename(&temp_path, &full_path) {
+        let _ = fs::remove_file(&temp_path);
+        error!(error = ?error, "Atomic replacement error");
+        return Err(Error::Io);
+    }
+    Ok(())
 }
 
 /// Safely lists the contents of a directory within the project boundary.
@@ -84,6 +111,9 @@ pub fn list_directory(root: &Path, path: &Path) -> Result<Vec<DirEntry>, Error> 
 
     for entry in read_dir {
         let entry = entry.map_err(|_| Error::Io)?;
+        if entries.len() >= MAX_DIRECTORY_ENTRIES {
+            return Err(Error::Io);
+        }
         let file_type = entry.file_type().map_err(|_| Error::Io)?;
 
         entries.push(DirEntry {
@@ -118,8 +148,14 @@ pub fn discover_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
             validate_boundary(&root_c, &path)?;
 
             // 3. Construct relative path.
-            let rel_path = path.strip_prefix(&root_c).map_err(|_| Error::Io)?.to_path_buf();
+            let rel_path = path
+                .strip_prefix(&root_c)
+                .map_err(|_| Error::Io)?
+                .to_path_buf();
             results.push(rel_path);
+            if results.len() > MAX_DISCOVERED_ENTRIES {
+                return Err(Error::Io);
+            }
 
             // 4. Recurse if it's a plain directory (not a symlink/reparse point).
             if ft.is_dir() && !is_link_or_reparse(&path, &ft)? {
@@ -167,9 +203,9 @@ fn resolve_and_validate(root: &Path, path: &Path) -> Result<PathBuf, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::env;
     use std::sync::Mutex;
+    use tempfile::tempdir;
 
     // Mutex to prevent concurrent CWD changes in tests
     static CWD_MUTEX: Mutex<()> = Mutex::new(());
@@ -196,8 +232,14 @@ mod tests {
         assert_eq!(read_file(&root, file), Ok("data".to_string()));
 
         // Sibling collision
-        let sibling = root.parent().unwrap().join(format!("{}-other", root.file_name().unwrap().to_str().unwrap()));
-        assert_eq!(write_file(&root, &sibling, "fail"), Err(Error::OutsideBoundary));
+        let sibling = root.parent().unwrap().join(format!(
+            "{}-other",
+            root.file_name().unwrap().to_str().unwrap()
+        ));
+        assert_eq!(
+            write_file(&root, &sibling, "fail"),
+            Err(Error::OutsideBoundary)
+        );
     }
 
     #[test]
@@ -214,14 +256,38 @@ mod tests {
         // Test root listing
         let entries = list_directory(&root, Path::new(".")).unwrap();
         assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0], DirEntry { name: "a.txt".to_string(), is_dir: false });
-        assert_eq!(entries[1], DirEntry { name: "b.txt".to_string(), is_dir: false });
-        assert_eq!(entries[2], DirEntry { name: "subdir".to_string(), is_dir: true });
+        assert_eq!(
+            entries[0],
+            DirEntry {
+                name: "a.txt".to_string(),
+                is_dir: false
+            }
+        );
+        assert_eq!(
+            entries[1],
+            DirEntry {
+                name: "b.txt".to_string(),
+                is_dir: false
+            }
+        );
+        assert_eq!(
+            entries[2],
+            DirEntry {
+                name: "subdir".to_string(),
+                is_dir: true
+            }
+        );
 
         // Test subdir listing
         let sub_entries = list_directory(&root, Path::new("subdir")).unwrap();
         assert_eq!(sub_entries.len(), 1);
-        assert_eq!(sub_entries[0], DirEntry { name: "c.txt".to_string(), is_dir: false });
+        assert_eq!(
+            sub_entries[0],
+            DirEntry {
+                name: "c.txt".to_string(),
+                is_dir: false
+            }
+        );
 
         // Test empty directory
         fs::create_dir(root.join("empty")).unwrap();
@@ -235,7 +301,10 @@ mod tests {
         assert_eq!(list_directory(&root, Path::new("missing")), Err(Error::Io));
 
         // Test boundary violation
-        assert_eq!(list_directory(&root, Path::new("..")), Err(Error::OutsideBoundary));
+        assert_eq!(
+            list_directory(&root, Path::new("..")),
+            Err(Error::OutsideBoundary)
+        );
     }
 
     #[test]
@@ -265,7 +334,11 @@ mod tests {
             assert!(files.contains(&PathBuf::from("link")));
 
             // External symlink
-            symlink(dir.path().parent().unwrap().join("other"), root.join("bad_link")).unwrap();
+            symlink(
+                dir.path().parent().unwrap().join("other"),
+                root.join("bad_link"),
+            )
+            .unwrap();
             assert_eq!(discover_files(&root), Err(Error::OutsideBoundary));
         }
 
@@ -320,7 +393,13 @@ mod tests {
 
             // Use cmd to create junction as it typically doesn't require admin rights
             let output = std::process::Command::new("cmd")
-                .args(["/C", "mklink", "/J", junction.to_str().unwrap(), target.to_str().unwrap()])
+                .args([
+                    "/C",
+                    "mklink",
+                    "/J",
+                    junction.to_str().unwrap(),
+                    target.to_str().unwrap(),
+                ])
                 .output()
                 .unwrap();
 

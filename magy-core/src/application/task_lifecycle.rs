@@ -15,10 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::Error;
-use crate::domain::agent::{Agent, Event, Task, State};
-use crate::domain::project::{Project, TaskStatus};
 use crate::application::project_lifecycle::save_project;
+use crate::domain::agent::{Agent, Event, State, Task};
+use crate::domain::project::{Project, TaskStatus};
+use crate::Error;
 
 /// Selects a task from the project and transitions the agent to Executing.
 pub fn select_task(agent: &mut Agent, project: &Project, task_id: &str) -> Result<(), Error> {
@@ -74,10 +74,10 @@ pub fn complete_current_task(agent: &mut Agent, project: &mut Project) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-    use std::fs;
-    use tempfile::tempdir;
     use crate::application::project_lifecycle::open_project;
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::tempdir;
 
     #[test]
     fn test_select_task_success() {
@@ -96,7 +96,9 @@ mod tests {
     #[test]
     fn test_select_task_not_found() {
         let mut agent = Agent::new();
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
 
         let project = Project {
             name: "P".to_string(),
@@ -115,7 +117,9 @@ mod tests {
     #[test]
     fn test_select_task_already_done() {
         let mut agent = Agent::new();
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
 
         let project = Project {
             name: "P".to_string(),

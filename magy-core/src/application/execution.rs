@@ -15,15 +15,15 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::Error;
-use crate::domain::agent::{Agent, State, Event};
-use crate::domain::project::{Project, ProjectContext, ProjectPlan};
-use crate::domain::tool::{ToolRequest, ToolResult};
-use crate::domain::model::{ModelProvider, ExecutionOutcome, ExecutionTrace};
 use crate::application::approval::ApprovalPolicy;
 use crate::application::reasoning::run_reasoning_step;
-use crate::application::verification_runner::run_verification;
 use crate::application::task_lifecycle::complete_current_task;
+use crate::application::verification_runner::run_verification;
+use crate::domain::agent::{Agent, Event, State};
+use crate::domain::model::{ExecutionOutcome, ExecutionTrace, ModelProvider};
+use crate::domain::project::{Project, ProjectContext, ProjectPlan};
+use crate::domain::tool::{ToolRequest, ToolResult};
+use crate::Error;
 
 /// Performs a bounded sequence of reasoning and execution steps.
 pub fn run_execution_cycle(
@@ -60,7 +60,9 @@ pub fn run_execution_cycle(
         };
 
         let record = step.action_record.as_ref();
-        let is_task_complete = record.map(|r| r.request == ToolRequest::TaskComplete).unwrap_or(false);
+        let is_task_complete = record
+            .map(|r| r.request == ToolRequest::TaskComplete)
+            .unwrap_or(false);
 
         if is_task_complete {
             trace.steps.push(step);
@@ -132,15 +134,15 @@ pub fn run_execution_cycle(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::tempdir;
-    use crate::domain::project::TaskStatus;
-    use crate::domain::model::{ModelResponse, ModelRequest};
-    use crate::application::project_lifecycle::open_project;
+    use crate::application::approval::DefaultApprovalPolicy;
     use crate::application::context_assembly::assemble_project_context;
     use crate::application::planning::plan_execution;
+    use crate::application::project_lifecycle::open_project;
     use crate::application::task_lifecycle::select_task;
-    use crate::application::approval::DefaultApprovalPolicy;
+    use crate::domain::model::{ModelRequest, ModelResponse};
+    use crate::domain::project::TaskStatus;
+    use std::fs;
+    use tempfile::tempdir;
 
     struct MultiMockProvider {
         responses: std::cell::RefCell<Vec<Result<ModelResponse, Error>>>,
@@ -149,7 +151,10 @@ mod tests {
         fn ask(&self, _req: ModelRequest) -> Result<ModelResponse, Error> {
             let mut resps = self.responses.borrow_mut();
             if resps.is_empty() {
-                panic!("MultiMockProvider: no more responses! Request was: {:?}", _req.history.len());
+                panic!(
+                    "MultiMockProvider: no more responses! Request was: {:?}",
+                    _req.history.len()
+                );
             }
             resps.remove(0)
         }
@@ -169,13 +174,31 @@ mod tests {
 
         let provider = MultiMockProvider {
             responses: std::cell::RefCell::new(vec![
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"read_file\", \"path\": \"input.txt\"}\n```".to_string() }),
-                Ok(ModelResponse { content: "Done.".to_string() }),
+                Ok(ModelResponse {
+                    content: "```json\n{\"tool\": \"read_file\", \"path\": \"input.txt\"}\n```"
+                        .to_string(),
+                }),
+                Ok(ModelResponse {
+                    content: "Done.".to_string(),
+                }),
             ]),
         };
 
         let mut trace = ExecutionTrace::new();
-        run_execution_cycle(&mut agent, &mut project, &context, &plan, &provider, &DefaultApprovalPolicy, "S", 5, 1, "echo verify", &mut trace).unwrap();
+        run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            5,
+            1,
+            "echo verify",
+            &mut trace,
+        )
+        .unwrap();
 
         assert_eq!(trace.steps.len(), 2);
         assert_eq!(trace.stopped_reason, "Model stopped without action");
@@ -199,11 +222,27 @@ mod tests {
         };
 
         let mut trace = ExecutionTrace::new();
-        run_execution_cycle(&mut agent, &mut project, &context, &plan, &provider, &DefaultApprovalPolicy, "S", 5, 1, "echo verify", &mut trace).unwrap();
+        run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            5,
+            1,
+            "echo verify",
+            &mut trace,
+        )
+        .unwrap();
 
         assert_eq!(trace.steps.len(), 1);
         assert_eq!(trace.stopped_reason, "Action requires approval");
-        assert_eq!(trace.steps[0].action_record.as_ref().unwrap().outcome, ExecutionOutcome::AwaitingApproval);
+        assert_eq!(
+            trace.steps[0].action_record.as_ref().unwrap().outcome,
+            ExecutionOutcome::AwaitingApproval
+        );
     }
 
     #[test]
@@ -225,7 +264,20 @@ mod tests {
         };
 
         let mut trace = ExecutionTrace::new();
-        run_execution_cycle(&mut agent, &mut project, &context, &plan, &provider, &DefaultApprovalPolicy, "S", 5, 1, "echo verify", &mut trace).unwrap();
+        run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            5,
+            1,
+            "echo verify",
+            &mut trace,
+        )
+        .unwrap();
 
         assert_eq!(trace.steps.len(), 1);
         assert_eq!(trace.stopped_reason, "Action requires approval");
@@ -233,7 +285,20 @@ mod tests {
         crate::application::approval::resolve_pending_action(&agent, &mut trace, 0, true).unwrap();
         assert_eq!(fs::read_to_string(root.join("res.txt")).unwrap(), "ok");
 
-        run_execution_cycle(&mut agent, &mut project, &context, &plan, &provider, &DefaultApprovalPolicy, "S", 5, 1, "echo verify", &mut trace).unwrap();
+        run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            5,
+            1,
+            "echo verify",
+            &mut trace,
+        )
+        .unwrap();
 
         assert_eq!(trace.steps.len(), 2);
         assert_eq!(trace.stopped_reason, "Model stopped without action");
@@ -269,17 +334,55 @@ mod tests {
         let cmd = "echo verify"; // Always passes (exit code 0)
 
         // RUN 1: write_file. Note: DefaultApprovalPolicy marks write_file as Pending.
-        run_execution_cycle(&mut agent, &mut project, &context, &plan, &provider, &DefaultApprovalPolicy, "S", 1, 2, cmd, &mut trace).unwrap();
+        run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            1,
+            2,
+            cmd,
+            &mut trace,
+        )
+        .unwrap();
 
         assert_eq!(trace.stopped_reason, "Action requires approval");
         crate::application::approval::resolve_pending_action(&agent, &mut trace, 0, true).unwrap();
-        assert_eq!(fs::read_to_string(root.join("main.rs")).unwrap(), "// fixed");
+        assert_eq!(
+            fs::read_to_string(root.join("main.rs")).unwrap(),
+            "// fixed"
+        );
 
         // RUN 2: task_complete.
-        run_execution_cycle(&mut agent, &mut project, &context, &plan, &provider, &DefaultApprovalPolicy, "S", 5, 2, cmd, &mut trace).unwrap();
+        run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            5,
+            2,
+            cmd,
+            &mut trace,
+        )
+        .unwrap();
 
         assert_eq!(agent.state(), &State::Planning);
         assert_eq!(project.tasks[0].status, TaskStatus::Done);
-        assert!(trace.steps.last().unwrap().verification.as_ref().unwrap().passed);
+        assert!(
+            trace
+                .steps
+                .last()
+                .unwrap()
+                .verification
+                .as_ref()
+                .unwrap()
+                .passed
+        );
     }
 }

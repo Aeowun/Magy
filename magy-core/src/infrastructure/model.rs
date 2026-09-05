@@ -15,11 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use crate::Error;
 use crate::domain::model::{ModelProvider, ModelRequest, ModelResponse};
 use crate::domain::project::FileContent;
+use crate::Error;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[derive(Debug, Clone)]
 pub struct LmStudioConfig {
@@ -99,13 +99,16 @@ impl ModelProvider for LmStudioProvider {
             content: request.system_prompt,
         };
 
-        let mut user_content = format!("Project Name: {}\nGoal: {}\n\n",
-            request.context.project.name,
-            request.context.project.goal
+        let mut user_content = format!(
+            "Project Name: {}\nGoal: {}\n\n",
+            request.context.project.name, request.context.project.goal
         );
 
         if let Some(task) = &request.task {
-            user_content.push_str(&format!("Active Task: [{}] {}\n\n", task.id, task.description));
+            user_content.push_str(&format!(
+                "Active Task: [{}] {}\n\n",
+                task.id, task.description
+            ));
         }
 
         if let Some(plan) = &request.plan {
@@ -190,20 +193,32 @@ impl ModelProvider for LmStudioProvider {
             }),
         };
 
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
 
-        let response = self.client.post(url)
+        let response = self
+            .client
+            .post(url)
             .json(&openai_req)
             .send()
             .map_err(|e| Error::ModelError(format!("Network error: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(Error::ModelError(format!("Provider returned status {}", response.status())));
+            return Err(Error::ModelError(format!(
+                "Provider returned status {}",
+                response.status()
+            )));
         }
 
-        let body: OpenAiResponse = response.json().map_err(|e| Error::ModelError(format!("JSON parse error: {}", e)))?;
+        let body: OpenAiResponse = response
+            .json()
+            .map_err(|e| Error::ModelError(format!("JSON parse error: {}", e)))?;
 
-        let content = body.choices.first()
+        let content = body
+            .choices
+            .first()
             .map(|c| c.message.content.clone())
             .ok_or(Error::ModelError("No choices in response".to_string()))?;
 
@@ -214,9 +229,9 @@ impl ModelProvider for LmStudioProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::domain::project::{FileContext, Project, ProjectContext};
     use mockito::Server;
-    use crate::domain::project::{Project, FileContext, ProjectContext};
+    use std::path::PathBuf;
 
     #[test]
     fn test_lm_studio_request_parsing() {
@@ -283,12 +298,10 @@ mod tests {
                     tasks: vec![],
                     current_status: "".to_string(),
                 },
-                files: vec![
-                    FileContext {
-                        path: PathBuf::from("src/lib.rs"),
-                        content: FileContent::Text("fn main() {}".to_string()),
-                    }
-                ],
+                files: vec![FileContext {
+                    path: PathBuf::from("src/lib.rs"),
+                    content: FileContent::Text("fn main() {}".to_string()),
+                }],
             },
             task: None,
             plan: None,
@@ -297,7 +310,10 @@ mod tests {
         };
 
         let response = provider.ask(request).unwrap();
-        assert_eq!(response.content, "{\"tool\": \"discover_files\", \"path\": null, \"content\": null, \"command\": null}");
+        assert_eq!(
+            response.content,
+            "{\"tool\": \"discover_files\", \"path\": null, \"content\": null, \"command\": null}"
+        );
         mock.assert();
     }
 
@@ -312,7 +328,8 @@ mod tests {
             "required": ["val"]
         });
 
-        let mock = server.mock("POST", "/chat/completions")
+        let mock = server
+            .mock("POST", "/chat/completions")
             .match_body(mockito::Matcher::Json(json!({
                 "model": "test-model",
                 "messages": [
@@ -331,10 +348,15 @@ mod tests {
             })))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"choices": [{"message": {"role": "assistant", "content": "{\"val\": 42}"}}]}"#)
+            .with_body(
+                r#"{"choices": [{"message": {"role": "assistant", "content": "{\"val\": 42}"}}]}"#,
+            )
             .create();
 
-        let config = LmStudioConfig { base_url: url, model_name: "test-model".to_string() };
+        let config = LmStudioConfig {
+            base_url: url,
+            model_name: "test-model".to_string(),
+        };
         let provider = LmStudioProvider::new(config);
 
         let request = ModelRequest {
@@ -367,7 +389,8 @@ mod tests {
         let mut server = Server::new();
         let url = server.url();
 
-        let _mock = server.mock("POST", "/chat/completions")
+        let _mock = server
+            .mock("POST", "/chat/completions")
             .with_status(500)
             .create();
 

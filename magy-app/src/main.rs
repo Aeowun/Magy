@@ -8,8 +8,8 @@ use axum::{
 use futures_util::stream::Stream;
 use magy_core::{
     assemble_project_context, open_project, plan_execution, resolve_pending_action,
-    run_execution_cycle, select_task, DefaultApprovalPolicy, ExecutionTrace,
-    LmStudioConfig, LmStudioProvider, Project,
+    run_execution_cycle, select_task, DefaultApprovalPolicy, ExecutionTrace, LmStudioConfig,
+    LmStudioProvider, Project,
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, path::PathBuf, sync::Arc};
@@ -36,7 +36,10 @@ struct UiTask {
 enum UiEvent {
     ProjectLoaded(UiProject),
     AgentStateChanged(String),
-    Step { step: serde_json::Value, index: usize },
+    Step {
+        step: serde_json::Value,
+        index: usize,
+    },
     Stop(String),
     Error(String),
 }
@@ -84,7 +87,9 @@ async fn load_project(State(state): State<SharedState>) -> Json<serde_json::Valu
     let folder = rfd::FileDialog::new().pick_folder();
     if let Some(root) = folder {
         let root_clone = root.clone();
-        let res = tokio::task::spawn_blocking(move || open_project(root_clone)).await.unwrap();
+        let res = tokio::task::spawn_blocking(move || open_project(root_clone))
+            .await
+            .unwrap();
 
         match res {
             Ok((_, project)) => {
@@ -93,13 +98,17 @@ async fn load_project(State(state): State<SharedState>) -> Json<serde_json::Valu
                 s.project = Some(project.clone());
                 s.trace = ExecutionTrace::new();
                 let ui_project = to_ui_project(&project);
-                s.event_tx.send(UiEvent::ProjectLoaded(ui_project.clone())).ok();
+                s.event_tx
+                    .send(UiEvent::ProjectLoaded(ui_project.clone()))
+                    .ok();
                 return Json(serde_json::json!({ "status": "success", "project": ui_project }));
             }
             Err(e) => {
                 let mut s = state.lock().await;
                 s.root = Some(root);
-                return Json(serde_json::json!({ "status": "error", "message": format!("{:?}", e) }));
+                return Json(
+                    serde_json::json!({ "status": "error", "message": format!("{:?}", e) }),
+                );
             }
         }
     }
@@ -127,13 +136,17 @@ async fn initialize_project(
     let res = tokio::task::spawn_blocking(move || {
         let provider = LmStudioProvider::new(config);
         magy_core::initialize_project(root, &provider, &goal)
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 
     match res {
         Ok(project) => {
             s.project = Some(project.clone());
             let ui_project = to_ui_project(&project);
-            s.event_tx.send(UiEvent::ProjectLoaded(ui_project.clone())).ok();
+            s.event_tx
+                .send(UiEvent::ProjectLoaded(ui_project.clone()))
+                .ok();
             Json(serde_json::json!({ "status": "success", "project": ui_project }))
         }
         Err(e) => Json(serde_json::json!({ "status": "error", "message": format!("{:?}", e) })),
@@ -148,8 +161,12 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
     let state_ref = Arc::clone(&state);
 
     tokio::spawn(async move {
-        let res = tokio::task::spawn_blocking(move || open_project(root)).await.unwrap();
-        if res.is_err() { return; }
+        let res = tokio::task::spawn_blocking(move || open_project(root))
+            .await
+            .unwrap();
+        if res.is_err() {
+            return;
+        }
         let (mut agent, mut project) = res.unwrap();
 
         loop {
@@ -179,7 +196,8 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
                 select_task(&mut agent, &project, &next_task.id).unwrap();
 
                 let provider = LmStudioProvider::new(config);
-                let policy = DefaultApprovalPolicy;
+                let policy = DefaultApprovalPolicy::default()
+                    .allow_command("cargo test");
                 let res = run_execution_cycle(
                     &mut agent,
                     &mut project,
@@ -208,10 +226,12 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
             }
 
             for (i, step) in trace.steps.iter().enumerate().skip(prev_step_count) {
-                event_tx.send(UiEvent::Step {
-                    step: serde_json::to_value(step).unwrap(),
-                    index: i
-                }).ok();
+                event_tx
+                    .send(UiEvent::Step {
+                        step: serde_json::to_value(step).unwrap(),
+                        index: i,
+                    })
+                    .ok();
             }
 
             let stop_reason = trace.stopped_reason.clone();
@@ -221,7 +241,9 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
                 break;
             }
 
-            event_tx.send(UiEvent::ProjectLoaded(to_ui_project(&project))).ok();
+            event_tx
+                .send(UiEvent::ProjectLoaded(to_ui_project(&project)))
+                .ok();
 
             if let Some(Err(e)) = cycle_res {
                 event_tx.send(UiEvent::Error(format!("{:?}", e))).ok();
@@ -258,7 +280,9 @@ async fn resolve_action(
         let (agent, _) = open_project(root).unwrap();
         let res = resolve_pending_action(&agent, &mut trace, index, approved);
         (res, trace)
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 
     let (resolve_res, trace_new) = res;
 
@@ -266,10 +290,12 @@ async fn resolve_action(
         let mut s_lock = state.lock().await;
         s_lock.trace = trace_new.clone();
         let step = &s_lock.trace.steps[payload.index];
-        event_tx.send(UiEvent::Step {
-            step: serde_json::to_value(step).unwrap(),
-            index: payload.index
-        }).ok();
+        event_tx
+            .send(UiEvent::Step {
+                step: serde_json::to_value(step).unwrap(),
+                index: payload.index,
+            })
+            .ok();
     }
 
     match resolve_res {
@@ -288,9 +314,7 @@ async fn events_handler(
     }
 
     let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
-        .map(|event| {
-            Event::default().data(serde_json::to_string(&event).unwrap())
-        })
+        .map(|event| Event::default().data(serde_json::to_string(&event).unwrap()))
         .map(Ok);
 
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new())
@@ -300,10 +324,14 @@ fn to_ui_project(project: &Project) -> UiProject {
     UiProject {
         name: project.name.clone(),
         goal: project.goal.clone(),
-        tasks: project.tasks.iter().map(|t| UiTask {
-            id: t.id.clone(),
-            description: t.description.clone(),
-            status: format!("{:?}", t.status),
-        }).collect(),
+        tasks: project
+            .tasks
+            .iter()
+            .map(|t| UiTask {
+                id: t.id.clone(),
+                description: t.description.clone(),
+                status: format!("{:?}", t.status),
+            })
+            .collect(),
     }
 }

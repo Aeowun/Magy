@@ -15,10 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::Path;
-use std::process::Command;
-use crate::Error;
 use crate::domain::tool::CommandOutput;
+use crate::Error;
+use std::io::Read;
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+pub const MAX_COMMAND_OUTPUT_BYTES: usize = 1024 * 1024;
 
 /// Safely runs a command within the project boundary.
 ///
@@ -30,25 +36,52 @@ pub fn run_project_command(root: &Path, command_str: &str) -> Result<CommandOutp
         ("sh", "-c")
     };
 
-    let output = Command::new(shell)
+    let mut child = Command::new(shell)
         .arg(arg)
         .arg(command_str)
         .current_dir(root)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|_| Error::Io)?;
 
+    let started = Instant::now();
+    loop {
+        if child.try_wait().map_err(|_| Error::Io)?.is_some() {
+            break;
+        }
+        if started.elapsed() >= COMMAND_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(Error::Io);
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    if let Some(mut pipe) = child.stdout.take() {
+        pipe.read_to_end(&mut stdout).map_err(|_| Error::Io)?;
+    }
+    if let Some(mut pipe) = child.stderr.take() {
+        pipe.read_to_end(&mut stderr).map_err(|_| Error::Io)?;
+    }
+    let status = child.wait().map_err(|_| Error::Io)?;
+    let truncate = |bytes: Vec<u8>| {
+        String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_COMMAND_OUTPUT_BYTES)]).into_owned()
+    };
+
     Ok(CommandOutput {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        exit_code: output.status.code(),
+        stdout: truncate(stdout),
+        stderr: truncate(stderr),
+        exit_code: status.code(),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_run_project_command_success() {
@@ -66,7 +99,11 @@ mod tests {
         let root = dir.path().canonicalize().unwrap();
         fs::write(root.join("test.txt"), "data").unwrap();
 
-        let cmd = if cfg!(windows) { "type test.txt" } else { "cat test.txt" };
+        let cmd = if cfg!(windows) {
+            "type test.txt"
+        } else {
+            "cat test.txt"
+        };
         let output = run_project_command(&root, cmd).unwrap();
         assert_eq!(output.stdout.trim(), "data");
     }

@@ -15,9 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 use crate::Error;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TaskStatus {
@@ -293,8 +293,14 @@ In progress";
 
     #[test]
     fn test_parse_missing_required() {
-        assert_eq!(parse_project_md("Name\n\nTasks\n- [ ] T"), Err(Error::MissingGoal));
-        assert_eq!(parse_project_md("Name\n\nGoal\nG"), Err(Error::MissingTasks));
+        assert_eq!(
+            parse_project_md("Name\n\nTasks\n- [ ] T"),
+            Err(Error::MissingGoal)
+        );
+        assert_eq!(
+            parse_project_md("Name\n\nGoal\nG"),
+            Err(Error::MissingTasks)
+        );
     }
 
     #[test]
@@ -329,8 +335,16 @@ In progress";
             constraints: vec!["Cons 1".to_string()],
             definition_of_done: vec!["DoD 1".to_string()],
             tasks: vec![
-                ProjectTask { id: "1".to_string(), description: "T1".to_string(), status: TaskStatus::Done },
-                ProjectTask { id: "2".to_string(), description: "T2".to_string(), status: TaskStatus::Open },
+                ProjectTask {
+                    id: "1".to_string(),
+                    description: "T1".to_string(),
+                    status: TaskStatus::Done,
+                },
+                ProjectTask {
+                    id: "2".to_string(),
+                    description: "T2".to_string(),
+                    status: TaskStatus::Open,
+                },
             ],
             current_status: "Status line 1\nStatus line 2".to_string(),
         };
@@ -351,8 +365,16 @@ In progress";
             constraints: vec!["C1".to_string()],
             definition_of_done: vec!["D1".to_string()],
             tasks: vec![
-                ProjectTask { id: "1".to_string(), description: "Task 1".to_string(), status: TaskStatus::Done },
-                ProjectTask { id: "2".to_string(), description: "Task 2".to_string(), status: TaskStatus::Open },
+                ProjectTask {
+                    id: "1".to_string(),
+                    description: "Task 1".to_string(),
+                    status: TaskStatus::Done,
+                },
+                ProjectTask {
+                    id: "2".to_string(),
+                    description: "Task 2".to_string(),
+                    status: TaskStatus::Open,
+                },
             ],
             current_status: "Working".to_string(),
         };

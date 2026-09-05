@@ -16,9 +16,9 @@
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::Error;
-use tracing::debug;
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use tracing::debug;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
@@ -95,13 +95,13 @@ impl Agent {
             (State::Idle, Event::Start(path)) => {
                 next_root = Some(path.clone());
                 State::Planning
-            },
+            }
 
             // Planning transitions
             (State::Planning, Event::TaskSelected(task)) => {
                 next_task = Some(task.clone());
                 State::Executing
-            },
+            }
             (State::Planning, Event::Pause) => State::Paused(Box::new(State::Planning)),
 
             // Executing transitions
@@ -114,7 +114,7 @@ impl Agent {
             (State::Verifying, Event::TestsPassed) => {
                 next_task = None;
                 State::Planning
-            },
+            }
             (State::Verifying, Event::AllDone) => State::Completed,
             (State::Verifying, Event::Pause) => State::Paused(Box::new(State::Verifying)),
 
@@ -127,7 +127,7 @@ impl Agent {
                 next_root = None;
                 next_task = None;
                 State::Idle
-            },
+            }
 
             // Global Fatal Error (Active states to Failed)
             (State::Planning, Event::FatalError) => State::Failed,
@@ -164,10 +164,14 @@ mod tests {
         let mut agent = Agent::new();
         assert_eq!(agent.state(), &State::Idle);
 
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
         assert_eq!(agent.state(), &State::Planning);
 
-        agent.transition(Event::TaskSelected(sample_task())).unwrap();
+        agent
+            .transition(Event::TaskSelected(sample_task()))
+            .unwrap();
         assert_eq!(agent.state(), &State::Executing);
 
         agent.transition(Event::ActionDone).unwrap();
@@ -180,8 +184,12 @@ mod tests {
     #[test]
     fn test_pause_resume() {
         let mut agent = Agent::new();
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
-        agent.transition(Event::TaskSelected(sample_task())).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
+        agent
+            .transition(Event::TaskSelected(sample_task()))
+            .unwrap();
         assert_eq!(agent.state(), &State::Executing);
 
         agent.transition(Event::Pause).unwrap();
@@ -199,20 +207,28 @@ mod tests {
         let mut agent = Agent::new();
 
         // Stop from Planning
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
         agent.transition(Event::Stop).unwrap();
         assert_eq!(agent.state(), &State::Idle);
 
         // Stop from Failed
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
         agent.transition(Event::FatalError).unwrap();
         assert_eq!(agent.state(), &State::Failed);
         agent.transition(Event::Stop).unwrap();
         assert_eq!(agent.state(), &State::Idle);
 
         // Stop from Completed
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
-        agent.transition(Event::TaskSelected(sample_task())).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
+        agent
+            .transition(Event::TaskSelected(sample_task()))
+            .unwrap();
         agent.transition(Event::ActionDone).unwrap();
         agent.transition(Event::AllDone).unwrap();
         assert_eq!(agent.state(), &State::Completed);
@@ -233,8 +249,12 @@ mod tests {
     #[test]
     fn test_fatal_error() {
         let mut agent = Agent::new();
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
-        agent.transition(Event::TaskSelected(sample_task())).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
+        agent
+            .transition(Event::TaskSelected(sample_task()))
+            .unwrap();
         agent.transition(Event::ActionDone).unwrap();
         assert_eq!(agent.state(), &State::Verifying);
 
@@ -258,7 +278,9 @@ mod tests {
         let root_path = PathBuf::from("/project");
         agent.transition(Event::Start(root_path.clone())).unwrap();
 
-        agent.transition(Event::TaskSelected(sample_task())).unwrap();
+        agent
+            .transition(Event::TaskSelected(sample_task()))
+            .unwrap();
         assert_eq!(agent.state(), &State::Executing);
         assert_eq!(agent.root(), Some(root_path.as_path()));
     }
@@ -277,7 +299,9 @@ mod tests {
     #[test]
     fn test_task_selection() {
         let mut agent = Agent::new();
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
 
         let task = sample_task();
         agent.transition(Event::TaskSelected(task.clone())).unwrap();
@@ -289,8 +313,12 @@ mod tests {
     #[test]
     fn test_task_cleared_on_success() {
         let mut agent = Agent::new();
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
-        agent.transition(Event::TaskSelected(sample_task())).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
+        agent
+            .transition(Event::TaskSelected(sample_task()))
+            .unwrap();
         agent.transition(Event::ActionDone).unwrap();
         assert_eq!(agent.state(), &State::Verifying);
 
@@ -302,7 +330,9 @@ mod tests {
     #[test]
     fn test_task_persistence_on_failure() {
         let mut agent = Agent::new();
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
         let task = sample_task();
         agent.transition(Event::TaskSelected(task.clone())).unwrap();
         agent.transition(Event::ActionDone).unwrap();
@@ -315,8 +345,12 @@ mod tests {
     #[test]
     fn test_task_cleared_on_stop() {
         let mut agent = Agent::new();
-        agent.transition(Event::Start(PathBuf::from("/test"))).unwrap();
-        agent.transition(Event::TaskSelected(sample_task())).unwrap();
+        agent
+            .transition(Event::Start(PathBuf::from("/test")))
+            .unwrap();
+        agent
+            .transition(Event::TaskSelected(sample_task()))
+            .unwrap();
 
         agent.transition(Event::Stop).unwrap();
         assert_eq!(agent.state(), &State::Idle);

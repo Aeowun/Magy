@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Secure local runtime
+
+* Merged the secure execution behavior into the current CLI/UI architecture.
+* Added deny-by-default command approval with exact command allowlisting.
+* Added bounded file reads/writes and synchronized temporary-file replacement.
+* Added command timeouts and bounded stdout/stderr capture.
+* Added Windows launch and developer-shell scripts.
+
 All notable changes to Magy are documented here.
 
 > [!TIP]

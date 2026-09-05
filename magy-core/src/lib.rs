@@ -16,25 +16,29 @@
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
 // Magy Core - Domain Logic
-pub mod boundary;
-pub mod infrastructure;
-pub mod domain;
 pub mod application;
+pub mod boundary;
+pub mod domain;
+pub mod infrastructure;
 
-pub use infrastructure::filesystem::{read_file, write_file, list_directory, discover_files, DirEntry};
-pub use domain::project::{ProjectContext, FileContext, FileContent, Project, ProjectTask, TaskStatus, ProjectPlan};
-pub use domain::tool::{ToolRequest, ToolResult, CommandOutput};
-pub use domain::model::{
-    ModelProvider, ModelRequest, ModelResponse, ModelAction, StepResult,
-    ApprovalStatus, ExecutionOutcome, ActionRecord, ExecutionTrace, RunResult
-};
-pub use infrastructure::model::{LmStudioProvider, LmStudioConfig};
 pub use application::{
-    open_project, save_project, initialize_project, select_task, complete_current_task,
-    assemble_project_context, plan_execution, execute_tool,
-    run_reasoning_step, run_execution_cycle, resolve_pending_action,
-    run_project_workflow, ApprovalPolicy, DefaultApprovalPolicy
+    assemble_project_context, complete_current_task, execute_tool, initialize_project,
+    open_project, plan_execution, resolve_pending_action, run_execution_cycle,
+    run_project_workflow, run_reasoning_step, save_project, select_task, ApprovalPolicy,
+    DefaultApprovalPolicy,
 };
+pub use domain::model::{
+    ActionRecord, ApprovalStatus, ExecutionOutcome, ExecutionTrace, ModelAction, ModelProvider,
+    ModelRequest, ModelResponse, RunResult, StepResult,
+};
+pub use domain::project::{
+    FileContent, FileContext, Project, ProjectContext, ProjectPlan, ProjectTask, TaskStatus,
+};
+pub use domain::tool::{CommandOutput, ToolRequest, ToolResult};
+pub use infrastructure::filesystem::{
+    discover_files, list_directory, read_file, write_file, DirEntry,
+};
+pub use infrastructure::model::{LmStudioConfig, LmStudioProvider};
 
 use std::fmt;
 

@@ -15,14 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::{Path, PathBuf};
+use crate::domain::agent::{Agent, Event};
+use crate::domain::model::{ModelProvider, ModelRequest};
+use crate::domain::project::{
+    parse_project_md, serialize_project_md, Project, ProjectContext, ProjectTask, TaskStatus,
+};
+use crate::infrastructure::filesystem::{discover_files, read_file, write_file};
+use crate::Error;
 use serde::Deserialize;
 use serde_json::json;
-use crate::Error;
-use crate::domain::agent::{Agent, Event};
-use crate::domain::project::{Project, ProjectTask, TaskStatus, ProjectContext, parse_project_md, serialize_project_md};
-use crate::domain::model::{ModelProvider, ModelRequest};
-use crate::infrastructure::filesystem::{read_file, write_file, discover_files};
+use std::path::{Path, PathBuf};
 
 /// Coordinates the opening of a project: reading the file, parsing it,
 /// and initializing the agent run.
@@ -92,10 +94,13 @@ Output ONLY a JSON object matching the requested schema.";
 
     // Discovery files for context (even if minimal)
     let paths = discover_files(&root).unwrap_or_default();
-    let files = paths.into_iter().map(|p| crate::domain::project::FileContext {
-        path: p,
-        content: crate::domain::project::FileContent::Unreadable("Initializing".to_string()),
-    }).collect();
+    let files = paths
+        .into_iter()
+        .map(|p| crate::domain::project::FileContext {
+            path: p,
+            content: crate::domain::project::FileContent::Unreadable("Initializing".to_string()),
+        })
+        .collect();
 
     let dummy_project = Project {
         name: "New Project".to_string(),
@@ -109,7 +114,10 @@ Output ONLY a JSON object matching the requested schema.";
 
     let request = ModelRequest {
         system_prompt: system_prompt.to_string(),
-        context: ProjectContext { project: dummy_project, files },
+        context: ProjectContext {
+            project: dummy_project,
+            files,
+        },
         task: None,
         plan: None,
         history: vec![],
@@ -130,11 +138,16 @@ Output ONLY a JSON object matching the requested schema.";
         requirements: generated.requirements,
         constraints: generated.constraints,
         definition_of_done: generated.definition_of_done,
-        tasks: generated.tasks.into_iter().enumerate().map(|(i, desc)| ProjectTask {
-            id: (i + 1).to_string(),
-            description: desc,
-            status: TaskStatus::Open,
-        }).collect(),
+        tasks: generated
+            .tasks
+            .into_iter()
+            .enumerate()
+            .map(|(i, desc)| ProjectTask {
+                id: (i + 1).to_string(),
+                description: desc,
+                status: TaskStatus::Open,
+            })
+            .collect(),
         current_status: "Initialized".to_string(),
     };
 
@@ -148,8 +161,8 @@ Output ONLY a JSON object matching the requested schema.";
 mod tests {
     use super::*;
     use crate::domain::agent::State;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_open_valid_project() {
@@ -230,7 +243,9 @@ mod tests {
     }
     impl ModelProvider for MockProvider {
         fn ask(&self, _req: ModelRequest) -> Result<crate::domain::model::ModelResponse, Error> {
-            Ok(crate::domain::model::ModelResponse { content: self.response.clone() })
+            Ok(crate::domain::model::ModelResponse {
+                content: self.response.clone(),
+            })
         }
     }
 
@@ -246,9 +261,12 @@ mod tests {
             "constraints": ["Cons 1"],
             "definition_of_done": ["DoD 1"],
             "tasks": ["Task 1", "Task 2"]
-        }).to_string();
+        })
+        .to_string();
 
-        let provider = MockProvider { response: json_resp };
+        let provider = MockProvider {
+            response: json_resp,
+        };
         let project = initialize_project(root.clone(), &provider, "My goal").unwrap();
 
         assert_eq!(project.name, "Test App");
@@ -269,7 +287,9 @@ mod tests {
         let existing = "Old Name\n\nGoal\nOld Goal\n\nTasks\n- [ ] Old Task";
         fs::write(root.join("Project.md"), existing).unwrap();
 
-        let provider = MockProvider { response: "{}".to_string() }; // Should not be called
+        let provider = MockProvider {
+            response: "{}".to_string(),
+        }; // Should not be called
         let project = initialize_project(root, &provider, "New Goal").unwrap();
 
         assert_eq!(project.name, "Old Name");
@@ -281,7 +301,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
 
-        let provider = MockProvider { response: "not json".to_string() };
+        let provider = MockProvider {
+            response: "not json".to_string(),
+        };
         let result = initialize_project(root.clone(), &provider, "goal");
 
         assert!(matches!(result, Err(Error::ModelError(_))));

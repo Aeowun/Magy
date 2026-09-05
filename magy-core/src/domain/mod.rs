@@ -16,6 +16,6 @@
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod agent;
+pub mod model;
 pub mod project;
 pub mod tool;
-pub mod model;

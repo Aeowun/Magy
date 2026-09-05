@@ -52,6 +52,18 @@ cargo run -p magy-app
 
 Then open your browser to `http://localhost:3000`.
 
+On Windows, double-click `launch-magy.bat` to build, start the local app, and
+open the browser automatically. For a persistent developer shell, run:
+
+```powershell
+.\magy-shell.ps1 -Command test
+.\magy-shell.ps1 -Command run
+.\magy-shell.ps1 -Command cli -ProjectPath C:\path\to\project
+```
+
+Alternatively, double-click `magy-shell.bat` to open a PowerShell window
+already rooted at the repository.
+
 ### To load a project
 
 1.  Click **Load Project**.
@@ -64,6 +76,8 @@ Magy reads the project, plans work, and asks the model what to do.
 
 *   **Read-only actions** (like reading files or listing directories) run automatically.
 *   **Restricted actions** (like writing files or executing commands) require explicit operator approval in the UI.
+*   **Commands** are deny-by-default and must exactly match an allowlisted command
+    before an approval prompt is shown.
 *   **Verification**: After changes are made, Magy runs a verification command (configurable, defaults to `cargo test`). If verification fails, the failure output is given back to the model so it can attempt another fix.
 
 A task is complete when verification succeeds.
@@ -95,6 +109,8 @@ task_complete
 ```
 
 Tool execution is strictly constrained to the selected project directory.
+Writes are size-bounded and use synchronized temporary-file replacement. Command
+execution has a wall-clock timeout and bounded captured output.
 
 ## Building
 

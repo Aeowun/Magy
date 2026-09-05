@@ -15,11 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::Error;
-use crate::domain::agent::Agent;
-use crate::domain::tool::ToolRequest;
-use crate::domain::model::{ApprovalStatus, ExecutionTrace, ExecutionOutcome};
 use crate::application::tool_execution::execute_tool;
+use crate::domain::agent::Agent;
+use crate::domain::model::{ApprovalStatus, ExecutionOutcome, ExecutionTrace};
+use crate::domain::tool::ToolRequest;
+use crate::Error;
+use std::collections::BTreeSet;
 
 /// A policy for evaluating whether a tool request requires approval.
 pub trait ApprovalPolicy {
@@ -27,7 +28,28 @@ pub trait ApprovalPolicy {
 }
 
 /// A simple deterministic approval policy.
-pub struct DefaultApprovalPolicy;
+pub struct DefaultApprovalPolicy {
+    allowed_commands: BTreeSet<String>,
+}
+
+impl Default for DefaultApprovalPolicy {
+    fn default() -> Self {
+        Self {
+            allowed_commands: BTreeSet::new(),
+        }
+    }
+}
+
+impl DefaultApprovalPolicy {
+    pub fn allow_command(mut self, command: impl Into<String>) -> Self {
+        self.allowed_commands.insert(command.into());
+        self
+    }
+
+    pub fn allows_command(&self, command: &str) -> bool {
+        self.allowed_commands.contains(command)
+    }
+}
 
 impl ApprovalPolicy for DefaultApprovalPolicy {
     fn evaluate(&self, request: &ToolRequest) -> ApprovalStatus {
@@ -36,7 +58,13 @@ impl ApprovalPolicy for DefaultApprovalPolicy {
             ToolRequest::ListDirectory { .. } => ApprovalStatus::Approved,
             ToolRequest::DiscoverFiles => ApprovalStatus::Approved,
             ToolRequest::WriteFile { .. } => ApprovalStatus::Pending,
-            ToolRequest::RunCommand { .. } => ApprovalStatus::Pending,
+            ToolRequest::RunCommand { command } => {
+                if self.allows_command(command) {
+                    ApprovalStatus::Pending
+                } else {
+                    ApprovalStatus::Denied
+                }
+            }
             ToolRequest::TaskComplete => ApprovalStatus::Approved,
         }
     }
@@ -51,7 +79,10 @@ pub fn resolve_pending_action(
     step_index: usize,
     approved: bool,
 ) -> Result<(), Error> {
-    let step = trace.steps.get_mut(step_index).ok_or(Error::ActionNotFound)?;
+    let step = trace
+        .steps
+        .get_mut(step_index)
+        .ok_or(Error::ActionNotFound)?;
     let record = step.action_record.as_mut().ok_or(Error::ActionNotFound)?;
 
     if record.approval_status != ApprovalStatus::Pending {
@@ -73,13 +104,13 @@ pub fn resolve_pending_action(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-    use std::fs;
-    use tempfile::tempdir;
-    use crate::domain::model::{ActionRecord, StepResult, ModelResponse};
-    use crate::domain::tool::ToolResult;
     use crate::application::project_lifecycle::open_project;
     use crate::application::task_lifecycle::select_task;
+    use crate::domain::model::{ActionRecord, ModelResponse, StepResult};
+    use crate::domain::tool::ToolResult;
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::tempdir;
 
     #[test]
     fn test_resolve_pending_action_approve() {
@@ -92,10 +123,15 @@ mod tests {
 
         let mut trace = ExecutionTrace::new();
         trace.steps.push(StepResult {
-            model_response: ModelResponse { content: "Writing".to_string() },
+            model_response: ModelResponse {
+                content: "Writing".to_string(),
+            },
             action_record: Some(ActionRecord {
                 task_id: "1".to_string(),
-                request: ToolRequest::WriteFile { path: PathBuf::from("test.txt"), content: "data".to_string() },
+                request: ToolRequest::WriteFile {
+                    path: PathBuf::from("test.txt"),
+                    content: "data".to_string(),
+                },
                 approval_status: ApprovalStatus::Pending,
                 outcome: ExecutionOutcome::AwaitingApproval,
             }),
@@ -106,7 +142,10 @@ mod tests {
 
         let record = trace.steps[0].action_record.as_ref().unwrap();
         assert_eq!(record.approval_status, ApprovalStatus::Approved);
-        assert_eq!(record.outcome, ExecutionOutcome::Executed(ToolResult::Success));
+        assert_eq!(
+            record.outcome,
+            ExecutionOutcome::Executed(ToolResult::Success)
+        );
         assert_eq!(fs::read_to_string(root.join("test.txt")).unwrap(), "data");
     }
 
@@ -121,10 +160,15 @@ mod tests {
 
         let mut trace = ExecutionTrace::new();
         trace.steps.push(StepResult {
-            model_response: ModelResponse { content: "Writing".to_string() },
+            model_response: ModelResponse {
+                content: "Writing".to_string(),
+            },
             action_record: Some(ActionRecord {
                 task_id: "1".to_string(),
-                request: ToolRequest::WriteFile { path: PathBuf::from("test.txt"), content: "data".to_string() },
+                request: ToolRequest::WriteFile {
+                    path: PathBuf::from("test.txt"),
+                    content: "data".to_string(),
+                },
                 approval_status: ApprovalStatus::Pending,
                 outcome: ExecutionOutcome::AwaitingApproval,
             }),
@@ -144,7 +188,9 @@ mod tests {
         let agent = Agent::new();
         let mut trace = ExecutionTrace::new();
         trace.steps.push(StepResult {
-            model_response: ModelResponse { content: "Reading".to_string() },
+            model_response: ModelResponse {
+                content: "Reading".to_string(),
+            },
             action_record: Some(ActionRecord {
                 task_id: "1".to_string(),
                 request: ToolRequest::DiscoverFiles,
@@ -156,5 +202,33 @@ mod tests {
 
         let result = resolve_pending_action(&agent, &mut trace, 0, true);
         assert_eq!(result, Err(Error::ActionNotPending));
+    }
+
+    #[test]
+    fn test_commands_are_denied_by_default() {
+        let policy = DefaultApprovalPolicy::default();
+        assert_eq!(
+            policy.evaluate(&ToolRequest::RunCommand {
+                command: "curl https://example.com".to_string(),
+            }),
+            ApprovalStatus::Denied
+        );
+    }
+
+    #[test]
+    fn test_allowlisted_commands_still_require_approval() {
+        let policy = DefaultApprovalPolicy::default().allow_command("cargo test");
+        assert_eq!(
+            policy.evaluate(&ToolRequest::RunCommand {
+                command: "cargo test".to_string(),
+            }),
+            ApprovalStatus::Pending
+        );
+        assert_eq!(
+            policy.evaluate(&ToolRequest::RunCommand {
+                command: "cargo test --all".to_string(),
+            }),
+            ApprovalStatus::Denied
+        );
     }
 }

@@ -15,16 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
-use crate::Error;
-use crate::domain::agent::State;
-use crate::domain::model::{ModelProvider, ExecutionTrace, RunResult};
-use crate::application::project_lifecycle::open_project;
-use crate::application::context_assembly::assemble_project_context;
-use crate::application::planning::plan_execution;
-use crate::application::task_lifecycle::select_task;
-use crate::application::execution::run_execution_cycle;
 use crate::application::approval::ApprovalPolicy;
+use crate::application::context_assembly::assemble_project_context;
+use crate::application::execution::run_execution_cycle;
+use crate::application::planning::plan_execution;
+use crate::application::project_lifecycle::open_project;
+use crate::application::task_lifecycle::select_task;
+use crate::domain::agent::State;
+use crate::domain::model::{ExecutionTrace, ModelProvider, RunResult};
+use crate::Error;
+use std::path::PathBuf;
 
 /// Coordinates the full agent workflow for a project.
 pub fn run_project_workflow(
@@ -102,10 +102,10 @@ pub fn run_project_workflow(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::approval::DefaultApprovalPolicy;
+    use crate::domain::model::{ExecutionOutcome, ModelRequest, ModelResponse};
     use std::fs;
     use tempfile::tempdir;
-    use crate::domain::model::{ModelResponse, ModelRequest, ExecutionOutcome};
-    use crate::application::approval::DefaultApprovalPolicy;
 
     struct MultiMockProvider {
         responses: std::cell::RefCell<Vec<Result<ModelResponse, Error>>>,
@@ -114,7 +114,9 @@ mod tests {
         fn ask(&self, _req: ModelRequest) -> Result<ModelResponse, Error> {
             let mut resps = self.responses.borrow_mut();
             if resps.is_empty() {
-                return Ok(ModelResponse { content: "No more mock responses".to_string() });
+                return Ok(ModelResponse {
+                    content: "No more mock responses".to_string(),
+                });
             }
             resps.remove(0)
         }
@@ -124,14 +126,22 @@ mod tests {
     fn test_run_project_workflow_success_multiple_tasks() {
         let dir = tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
-        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T1\n- [ ] T2").unwrap();
+        fs::write(
+            root.join("Project.md"),
+            "P\n\nGoal\nG\n\nTasks\n- [ ] T1\n- [ ] T2",
+        )
+        .unwrap();
 
         let provider = MultiMockProvider {
             responses: std::cell::RefCell::new(vec![
                 // Task 1
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"task_complete\"}\n```".to_string() }),
+                Ok(ModelResponse {
+                    content: "```json\n{\"tool\": \"task_complete\"}\n```".to_string(),
+                }),
                 // Task 2
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"task_complete\"}\n```".to_string() }),
+                Ok(ModelResponse {
+                    content: "```json\n{\"tool\": \"task_complete\"}\n```".to_string(),
+                }),
             ]),
         };
 
@@ -139,13 +149,14 @@ mod tests {
         let result = run_project_workflow(
             root,
             &provider,
-            &DefaultApprovalPolicy,
+            &DefaultApprovalPolicy::default(),
             "echo verify",
             "S",
             5,
             1,
-            &mut trace
-        ).unwrap();
+            &mut trace,
+        )
+        .unwrap();
 
         assert!(result.project_completed);
         assert_eq!(result.completed_task_ids, vec!["1", "2"]);
@@ -168,43 +179,52 @@ mod tests {
         let result = run_project_workflow(
             root,
             &provider,
-            &DefaultApprovalPolicy,
+            &DefaultApprovalPolicy::default(),
             "echo verify",
             "S",
             5,
             1,
-            &mut trace
-        ).unwrap();
+            &mut trace,
+        )
+        .unwrap();
 
         assert!(!result.project_completed);
         assert_eq!(result.active_task_id, Some("1".to_string()));
         assert_eq!(result.stop_reason, "Action requires approval");
-        assert_eq!(trace.steps[0].action_record.as_ref().unwrap().outcome, ExecutionOutcome::AwaitingApproval);
+        assert_eq!(
+            trace.steps[0].action_record.as_ref().unwrap().outcome,
+            ExecutionOutcome::AwaitingApproval
+        );
     }
 
     #[test]
     fn test_run_project_workflow_skip_completed() {
         let dir = tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
-        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [x] T1\n- [ ] T2").unwrap();
+        fs::write(
+            root.join("Project.md"),
+            "P\n\nGoal\nG\n\nTasks\n- [x] T1\n- [ ] T2",
+        )
+        .unwrap();
 
         let provider = MultiMockProvider {
-            responses: std::cell::RefCell::new(vec![
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"task_complete\"}\n```".to_string() }),
-            ]),
+            responses: std::cell::RefCell::new(vec![Ok(ModelResponse {
+                content: "```json\n{\"tool\": \"task_complete\"}\n```".to_string(),
+            })]),
         };
 
         let mut trace = ExecutionTrace::new();
         let result = run_project_workflow(
             root,
             &provider,
-            &DefaultApprovalPolicy,
+            &DefaultApprovalPolicy::default(),
             "echo verify",
             "S",
             5,
             1,
-            &mut trace
-        ).unwrap();
+            &mut trace,
+        )
+        .unwrap();
 
         assert!(result.project_completed);
         assert_eq!(result.completed_task_ids, vec!["2"]);

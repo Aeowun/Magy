@@ -15,9 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::{Path, PathBuf, Component};
-use tracing::debug;
 use crate::Error;
+use std::path::{Component, Path, PathBuf};
+use tracing::debug;
 
 /// Security boundary for Magy. Ensures target paths are within the project root.
 pub fn is_within_boundary(root: &Path, target: &Path) -> bool {
@@ -97,16 +97,24 @@ fn normalize_path(path: &Path) -> PathBuf {
         match comp {
             Component::Prefix(p) => prefix = Some(p),
             Component::RootDir => has_root = true,
-            Component::ParentDir => { comps.pop(); }
+            Component::ParentDir => {
+                comps.pop();
+            }
             Component::CurDir => {}
             Component::Normal(c) => comps.push(c),
         }
     }
 
     let mut res = PathBuf::new();
-    if let Some(p) = prefix { res.push(p.as_os_str()); }
-    if has_root { res.push(std::path::MAIN_SEPARATOR.to_string()); }
-    for c in comps { res.push(c); }
+    if let Some(p) = prefix {
+        res.push(p.as_os_str());
+    }
+    if has_root {
+        res.push(std::path::MAIN_SEPARATOR.to_string());
+    }
+    for c in comps {
+        res.push(c);
+    }
     res
 }
 
@@ -125,7 +133,10 @@ mod tests {
         assert!(!is_within_boundary(&root, Path::new("C:/Windows/System32")));
 
         // Sibling collision check: /project-other should NOT start with /project
-        let sibling = root.parent().unwrap().join(format!("{}-other", root.file_name().unwrap().to_str().unwrap()));
+        let sibling = root.parent().unwrap().join(format!(
+            "{}-other",
+            root.file_name().unwrap().to_str().unwrap()
+        ));
         assert!(!is_within_boundary(&root, &sibling));
 
         // Windows casing check

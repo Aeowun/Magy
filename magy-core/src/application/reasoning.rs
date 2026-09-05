@@ -15,16 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::Error;
-use crate::domain::agent::{Agent, State, Event};
-use crate::domain::project::{ProjectContext, ProjectPlan};
-use crate::domain::tool::{ToolRequest, FlatToolRequest};
-use crate::domain::model::{
-    ModelProvider, ModelRequest, ModelAction, StepResult,
-    ApprovalStatus, ExecutionOutcome, ActionRecord
-};
 use crate::application::approval::ApprovalPolicy;
 use crate::application::tool_execution::execute_tool;
+use crate::domain::agent::{Agent, Event, State};
+use crate::domain::model::{
+    ActionRecord, ApprovalStatus, ExecutionOutcome, ModelAction, ModelProvider, ModelRequest,
+    StepResult,
+};
+use crate::domain::project::{ProjectContext, ProjectPlan};
+use crate::domain::tool::{FlatToolRequest, ToolRequest};
+use crate::Error;
 
 /// Performs a single bounded reasoning and execution cycle.
 pub fn run_reasoning_step(
@@ -151,16 +151,16 @@ fn try_parse_json(json_str: &str) -> Option<ModelAction> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::tempdir;
-    use crate::domain::model::ModelResponse;
-    use crate::domain::tool::ToolResult;
-    use crate::domain::project::Project;
-    use crate::application::project_lifecycle::open_project;
+    use crate::application::approval::DefaultApprovalPolicy;
     use crate::application::context_assembly::assemble_project_context;
     use crate::application::planning::plan_execution;
+    use crate::application::project_lifecycle::open_project;
     use crate::application::task_lifecycle::select_task;
-    use crate::application::approval::DefaultApprovalPolicy;
+    use crate::domain::model::ModelResponse;
+    use crate::domain::project::Project;
+    use crate::domain::tool::ToolResult;
+    use std::fs;
+    use tempfile::tempdir;
 
     struct MockProvider {
         response: Result<ModelResponse, Error>,
@@ -194,13 +194,27 @@ mod tests {
 
         let provider = MockProvider {
             response: Ok(ModelResponse {
-                content: "Thinking...\n```json\n{\"tool\": \"read_file\", \"path\": \"test.txt\"}\n```".to_string(),
+                content:
+                    "Thinking...\n```json\n{\"tool\": \"read_file\", \"path\": \"test.txt\"}\n```"
+                        .to_string(),
             }),
         };
 
-        let result = run_reasoning_step(&mut agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "prompt").unwrap();
+        let result = run_reasoning_step(
+            &mut agent,
+            &context,
+            &plan,
+            &[],
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "prompt",
+        )
+        .unwrap();
         let record = result.action_record.unwrap();
-        assert_eq!(record.outcome, ExecutionOutcome::Executed(ToolResult::Text("hello".to_string())));
+        assert_eq!(
+            record.outcome,
+            ExecutionOutcome::Executed(ToolResult::Text("hello".to_string()))
+        );
     }
 
     #[test]
@@ -220,7 +234,16 @@ mod tests {
             }),
         };
 
-        let result = run_reasoning_step(&mut agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "prompt").unwrap();
+        let result = run_reasoning_step(
+            &mut agent,
+            &context,
+            &plan,
+            &[],
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "prompt",
+        )
+        .unwrap();
         let record = result.action_record.unwrap();
         assert_eq!(record.approval_status, ApprovalStatus::Pending);
         assert_eq!(record.outcome, ExecutionOutcome::AwaitingApproval);
@@ -239,12 +262,24 @@ mod tests {
 
         let provider = MockProvider {
             response: Ok(ModelResponse {
-                content: "```json\n{\"tool\": \"read_file\", \"path\": \"test.txt\"}\n```".to_string(),
+                content: "```json\n{\"tool\": \"read_file\", \"path\": \"test.txt\"}\n```"
+                    .to_string(),
             }),
         };
-        let policy = MockPolicy { status: ApprovalStatus::Denied };
+        let policy = MockPolicy {
+            status: ApprovalStatus::Denied,
+        };
 
-        let result = run_reasoning_step(&mut agent, &context, &plan, &[], &provider, &policy, "prompt").unwrap();
+        let result = run_reasoning_step(
+            &mut agent,
+            &context,
+            &plan,
+            &[],
+            &provider,
+            &policy,
+            "prompt",
+        )
+        .unwrap();
         let record = result.action_record.unwrap();
         assert_eq!(record.outcome, ExecutionOutcome::Denied);
     }
@@ -265,9 +300,19 @@ mod tests {
             files: vec![],
         };
         let plan = ProjectPlan { tasks: vec![] };
-        let provider = MockProvider { response: Err(Error::Io) };
+        let provider = MockProvider {
+            response: Err(Error::Io),
+        };
 
-        let result = run_reasoning_step(&mut agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "S");
+        let result = run_reasoning_step(
+            &mut agent,
+            &context,
+            &plan,
+            &[],
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+        );
         assert_eq!(result, Err(Error::InvalidStateTransition));
     }
 
@@ -282,8 +327,18 @@ mod tests {
         let plan = plan_execution(&agent, &context).unwrap();
         select_task(&mut agent, &project, "1").unwrap();
 
-        let provider = MockProvider { response: Err(Error::ModelError("Bad".to_string())) };
-        let result = run_reasoning_step(&mut agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "S");
+        let provider = MockProvider {
+            response: Err(Error::ModelError("Bad".to_string())),
+        };
+        let result = run_reasoning_step(
+            &mut agent,
+            &context,
+            &plan,
+            &[],
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+        );
         assert!(matches!(result, Err(Error::ModelError(_))));
     }
 
@@ -299,10 +354,21 @@ mod tests {
         select_task(&mut agent, &project, "1").unwrap();
 
         let provider = MockProvider {
-            response: Ok(ModelResponse { content: "```json\n{\"tool\": \"bad\"}\n```".to_string() }),
+            response: Ok(ModelResponse {
+                content: "```json\n{\"tool\": \"bad\"}\n```".to_string(),
+            }),
         };
 
-        let result = run_reasoning_step(&mut agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "S").unwrap();
+        let result = run_reasoning_step(
+            &mut agent,
+            &context,
+            &plan,
+            &[],
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+        )
+        .unwrap();
         assert_eq!(result.action_record, None);
     }
 
@@ -318,12 +384,27 @@ mod tests {
         select_task(&mut agent, &project, "1").unwrap();
 
         let provider = MockProvider {
-            response: Ok(ModelResponse { content: "```json\n{\"tool\": \"read_file\", \"path\": \"../out\"}\n```".to_string() }),
+            response: Ok(ModelResponse {
+                content: "```json\n{\"tool\": \"read_file\", \"path\": \"../out\"}\n```"
+                    .to_string(),
+            }),
         };
 
-        let result = run_reasoning_step(&mut agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "S").unwrap();
+        let result = run_reasoning_step(
+            &mut agent,
+            &context,
+            &plan,
+            &[],
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+        )
+        .unwrap();
         let record = result.action_record.unwrap();
-        assert!(matches!(record.outcome, ExecutionOutcome::Executed(ToolResult::Error(_))));
+        assert!(matches!(
+            record.outcome,
+            ExecutionOutcome::Executed(ToolResult::Error(_))
+        ));
     }
 
     #[test]
@@ -338,10 +419,21 @@ mod tests {
         select_task(&mut agent, &project, "1").unwrap();
 
         let provider = MockProvider {
-            response: Ok(ModelResponse { content: "```json\n{\"tool\": \"task_complete\"}\n```".to_string() }),
+            response: Ok(ModelResponse {
+                content: "```json\n{\"tool\": \"task_complete\"}\n```".to_string(),
+            }),
         };
 
-        let result = run_reasoning_step(&mut agent, &context, &plan, &[], &provider, &DefaultApprovalPolicy, "S").unwrap();
+        let result = run_reasoning_step(
+            &mut agent,
+            &context,
+            &plan,
+            &[],
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+        )
+        .unwrap();
         assert_eq!(agent.state(), &State::Verifying);
         let record = result.action_record.unwrap();
         assert_eq!(record.request, ToolRequest::TaskComplete);
