@@ -74,6 +74,7 @@ enum ParserSection {
     Requirements,
     Constraints,
     DefinitionOfDone,
+    Verification,
     Tasks,
     CurrentStatus,
 }
@@ -103,6 +104,7 @@ pub fn parse_project_md(content: &str) -> Result<Project, Error> {
             "Requirements" => Some(ParserSection::Requirements),
             "Constraints" => Some(ParserSection::Constraints),
             "Definition of Done" => Some(ParserSection::DefinitionOfDone),
+            "Verification" => Some(ParserSection::Verification),
             "Tasks" => Some(ParserSection::Tasks),
             "Current Status" => Some(ParserSection::CurrentStatus),
             _ => None,
@@ -132,6 +134,7 @@ pub fn parse_project_md(content: &str) -> Result<Project, Error> {
                     dod.push(stripped.to_string());
                 }
             }
+            ParserSection::Verification => {}
             ParserSection::Tasks => {
                 let status = if trimmed.starts_with("- [ ] ") {
                     Some(TaskStatus::Open)

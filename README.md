@@ -86,7 +86,8 @@ Magy reads the project, plans work, and asks the model what to do.
 *   **Verification**: After changes are made, Magy selects a project-aware verifier:
     `cargo test` for Rust, `npm test` for Node projects, `pytest` for Python
     projects, and a bounded static validation for projects without a recognized
-    test runner. Explicit commands remain supported by the CLI.
+    test runner. Projects can declare an acceptance command in `Project.md`
+    under a `Verification` section; explicit CLI commands remain supported.
 
 A task is complete when verification succeeds.
 
@@ -104,6 +105,17 @@ command when the project requires custom verification:
 magy C:\path\to\project auto
 magy C:\path\to\project "npm run lint"
 ```
+
+For projects without a standard test runner, define the acceptance contract
+explicitly:
+
+```text
+Verification
+- node scripts/check-acceptance.js
+```
+
+Magy only marks a task complete when this command exits successfully. A model
+claim, file scan, or generic static check is not acceptance evidence.
 
 ## Models
 

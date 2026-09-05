@@ -25,7 +25,10 @@ use crate::Error;
 /// An empty result means the project has no recognized test runner. Such a
 /// project cannot be declared verified by the generic runner.
 pub fn recommended_verification_command(root: &std::path::Path) -> Option<String> {
-    if root.join("Cargo.toml").is_file() {
+    if let Some(command) = project_verification_command(root) {
+        return Some(command);
+    }
+    return if root.join("Cargo.toml").is_file() {
         Some("cargo test".to_string())
     } else if root.join("package.json").is_file() {
         Some("npm test".to_string())
@@ -36,7 +39,43 @@ pub fn recommended_verification_command(root: &std::path::Path) -> Option<String
         Some("pytest".to_string())
     } else {
         None
+    };
+}
+
+/// Reads an explicit `Verification` command from Project.md.
+///
+/// This is the project owner's acceptance contract. The command is still
+/// subject to Magy's exact-command approval policy before execution.
+fn project_verification_command(root: &std::path::Path) -> Option<String> {
+    let content = std::fs::read_to_string(root.join("Project.md")).ok()?;
+    let mut in_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "Verification" {
+            in_section = true;
+            continue;
+        }
+        if in_section
+            && matches!(
+                trimmed,
+                "Goal"
+                    | "Requirements"
+                    | "Constraints"
+                    | "Definition of Done"
+                    | "Tasks"
+                    | "Current Status"
+            )
+        {
+            break;
+        }
+        if in_section {
+            let command = trimmed.strip_prefix("- ").unwrap_or(trimmed).trim();
+            if !command.is_empty() {
+                return Some(command.to_string());
+            }
+        }
     }
+    None
 }
 
 /// Runs the verification command for the project.
@@ -139,6 +178,22 @@ mod tests {
         assert_eq!(
             recommended_verification_command(&root),
             Some("npm test".to_string())
+        );
+    }
+
+    #[test]
+    fn test_project_verification_contract_takes_precedence() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::write(
+            root.join("Project.md"),
+            "P\n\nGoal\nG\n\nVerification\n- node scripts/check.js\n\nTasks\n- [ ] T",
+        )
+        .unwrap();
+        std::fs::write(root.join("package.json"), "{}").unwrap();
+        assert_eq!(
+            recommended_verification_command(&root),
+            Some("node scripts/check.js".to_string())
         );
     }
 
