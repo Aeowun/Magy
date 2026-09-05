@@ -82,7 +82,8 @@ pub fn run_execution_cycle(
                 verification_count += 1;
 
                 if verification_count >= max_verifications {
-                    trace.stopped_reason = "Maximum verification attempts reached".to_string();
+                    trace.stopped_reason =
+                        "Verification warning: maximum verification attempts reached".to_string();
                     return Ok(());
                 }
                 continue;

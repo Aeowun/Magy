@@ -58,6 +58,11 @@ enum UiEvent {
     },
     Stop(String),
     Error(String),
+    Warning(String),
+    Chat {
+        role: String,
+        content: String,
+    },
 }
 
 struct AppState {
@@ -66,6 +71,7 @@ struct AppState {
     trace: ExecutionTrace,
     event_tx: mpsc::UnboundedSender<UiEvent>,
     auto_approve_tools: bool,
+    chat_history: Vec<(String, String)>,
 }
 
 type SharedState = Arc<Mutex<AppState>>;
@@ -82,12 +88,14 @@ async fn main() {
         trace: ExecutionTrace::new(),
         event_tx,
         auto_approve_tools: false,
+        chat_history: Vec::new(),
     }));
 
     let app = Router::new()
         .route("/api/load-project", post(load_project))
         .route("/api/initialize", post(initialize_project))
         .route("/api/run", post(run_agent))
+        .route("/api/chat", post(chat))
         .route("/api/resolve", post(resolve_action))
         .route("/api/settings", post(update_settings))
         .route("/api/events", get(events_handler))
@@ -187,6 +195,7 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
         if res.is_err() {
             return;
         }
+
         let (mut agent, mut project) = res.unwrap();
 
         loop {
@@ -251,6 +260,16 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
             }
 
             for (i, step) in trace.steps.iter().enumerate().skip(prev_step_count) {
+                if let Some(verification) = &step.verification {
+                    if !verification.passed {
+                        event_tx
+                            .send(UiEvent::Warning(format!(
+                                "{} failed (exit code {:?}). Magy will use the output to continue.",
+                                verification.command, verification.exit_code
+                            )))
+                            .ok();
+                    }
+                }
                 event_tx
                     .send(UiEvent::Step {
                         step: serde_json::to_value(step).unwrap(),
@@ -289,6 +308,68 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
     });
 
     Json(serde_json::json!({ "status": "started" }))
+}
+
+#[derive(Deserialize)]
+struct ChatRequest {
+    message: String,
+}
+
+async fn chat(
+    State(state): State<SharedState>,
+    Json(payload): Json<ChatRequest>,
+) -> Json<serde_json::Value> {
+    let message = payload.message.trim().to_string();
+    if message.is_empty() {
+        return Json(serde_json::json!({ "status": "error", "message": "Message is empty" }));
+    }
+    let (project, history, event_tx) = {
+        let s = state.lock().await;
+        (
+            s.project.clone(),
+            s.chat_history.clone(),
+            s.event_tx.clone(),
+        )
+    };
+    let Some(project) = project else {
+        return Json(
+            serde_json::json!({ "status": "error", "message": "Load a project before chatting" }),
+        );
+    };
+    let message_for_model = message.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let provider = LmStudioProvider::new(LmStudioConfig {
+            base_url: "http://localhost:1234/v1".to_string(),
+            model_name: "nvidia/nemotron-3-nano-4b".to_string(),
+        });
+        let _ = project;
+        provider.ask_chat(&message_for_model, &history)
+    })
+    .await
+    .unwrap();
+
+    match result {
+        Ok(reply) => {
+            let mut s = state.lock().await;
+            s.chat_history.push(("user".to_string(), message.clone()));
+            s.chat_history
+                .push(("assistant".to_string(), reply.clone()));
+            event_tx
+                .send(UiEvent::Chat {
+                    role: "user".to_string(),
+                    content: message,
+                })
+                .ok();
+            event_tx
+                .send(UiEvent::Chat {
+                    role: "assistant".to_string(),
+                    content: reply.clone(),
+                })
+                .ok();
+            Json(serde_json::json!({ "status": "success", "reply": reply }))
+        }
+        Err(e) => Json(serde_json::json!({ "status": "error", "message": format!("{:?}", e) })),
+    }
 }
 
 #[derive(Deserialize)]

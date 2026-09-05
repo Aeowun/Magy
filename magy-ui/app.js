@@ -21,6 +21,8 @@ const UI = {
         this.agentStatus = document.getElementById('agent-status');
         this.taskList = document.getElementById('task-list');
         this.feedContainer = document.getElementById('feed-container');
+        this.chatForm = document.getElementById('chat-form');
+        this.chatInput = document.getElementById('chat-input');
 
         this.interactionZone = document.getElementById('interaction-zone');
         this.pendingToolRequest = document.getElementById('pending-tool-request');
@@ -37,6 +39,10 @@ const UI = {
         this.approveBtn.addEventListener('click', () => this.resolveAction(true));
         this.denyBtn.addEventListener('click', () => this.resolveAction(false));
         this.autoApproveTools.addEventListener('change', () => this.updateSettings());
+        this.chatForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            this.sendChat();
+        });
     },
 
     async secureFetch(url, options = {}) {
@@ -188,12 +194,20 @@ const UI = {
                 this.progressBar.classList.add('hidden');
                 if (event.data === 'Action requires approval') {
                     this.showApproval();
+                } else if (event.data && event.data.startsWith('Verification warning')) {
+                    this.appendWarning(event.data);
                 } else if (event.data && event.data !== 'Task completed successfully') {
                     this.appendSystemMessage(event.data);
                 }
                 break;
             case 'Error':
                 this.showError("Runtime Error", event.data);
+                break;
+            case 'Warning':
+                this.appendWarning(event.data);
+                break;
+            case 'Chat':
+                this.appendChat(event.data.role, event.data.content);
                 break;
         }
     },
@@ -204,6 +218,33 @@ const UI = {
         element.textContent = `Magy stopped: ${message}`;
         this.feedContainer.appendChild(element);
         element.scrollIntoView({ behavior: 'smooth' });
+    },
+
+    appendWarning(message) {
+        const element = document.createElement('div');
+        element.className = 'activity-item warning-message';
+        element.textContent = `Warning: ${message}`;
+        this.feedContainer.appendChild(element);
+        element.scrollIntoView({ behavior: 'smooth' });
+    },
+
+    appendChat(role, content) {
+        const element = document.createElement('div');
+        element.className = `chat-message ${role}`;
+        element.textContent = content;
+        this.feedContainer.appendChild(element);
+        element.scrollIntoView({ behavior: 'smooth' });
+    },
+
+    async sendChat() {
+        const message = this.chatInput.value.trim();
+        if (!message) return;
+        this.chatInput.value = '';
+        await this.secureFetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+        });
     },
 
     appendActivity(step, index) {
@@ -238,8 +279,8 @@ const UI = {
         if (step.verification) {
             const ver = step.verification;
             html += `
-                <div class="verification-block ${ver.passed ? 'pass' : 'fail'}">
-                    <span style="font-weight: bold;">Verification: ${ver.passed ? 'PASSED' : 'FAILED'}</span>
+                <div class="verification-block ${ver.passed ? 'pass' : 'warn'}">
+                    <span style="font-weight: bold;">Verification: ${ver.passed ? 'PASSED' : 'WARNING — CHECK FAILED'}</span>
                     <pre style="font-size: 0.7rem; margin-top: 0.5rem; white-space: pre-wrap;">${ver.command}\n${ver.stdout}${ver.stderr}</pre>
                 </div>
             `;

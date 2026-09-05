@@ -42,6 +42,53 @@ impl LmStudioProvider {
                 .unwrap_or_else(|_| reqwest::blocking::Client::new()),
         }
     }
+
+    pub fn ask_chat(&self, message: &str, history: &[(String, String)]) -> Result<String, Error> {
+        let mut messages = vec![OpenAiMessage {
+            role: "system".to_string(),
+            content: "You are Magy, a concise and helpful local software engineering assistant. Answer conversational questions directly. Do not emit tool calls or claim to have changed files.".to_string(),
+        }];
+        for (role, content) in history.iter().take(12) {
+            messages.push(OpenAiMessage {
+                role: role.clone(),
+                content: content.clone(),
+            });
+        }
+        messages.push(OpenAiMessage {
+            role: "user".to_string(),
+            content: message.to_string(),
+        });
+
+        let request = OpenAiRequest {
+            model: self.config.model_name.clone(),
+            messages,
+            temperature: 0.2,
+            response_format: None,
+        };
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
+        let response = self
+            .client
+            .post(url)
+            .json(&request)
+            .send()
+            .map_err(|e| Error::ModelError(format!("Network error: {}", e)))?;
+        if !response.status().is_success() {
+            return Err(Error::ModelError(format!(
+                "Provider returned status {}",
+                response.status()
+            )));
+        }
+        let body: OpenAiResponse = response
+            .json()
+            .map_err(|e| Error::ModelError(format!("JSON parse error: {}", e)))?;
+        body.choices
+            .first()
+            .map(|choice| choice.message.content.clone())
+            .ok_or(Error::ModelError("No choices in response".to_string()))
+    }
 }
 
 #[derive(Serialize)]
