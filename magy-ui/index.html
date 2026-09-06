@@ -1,100 +1,149 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Magy — Local AI Software Engineering</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Magy — Local AI workbench</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="app" class="state-startup">
-        <!-- Startup View -->
-        <div id="startup-view" class="overlay">
+    <div id="app">
+        <section id="startup-view" class="startup" aria-labelledby="startup-title">
             <div class="startup-card">
-                <h1>Magy</h1>
-                <p class="tagline">Local AI Software Engineering System</p>
-
-                <div id="init-zone" class="hidden">
-                    <p>No Project.md found. What is your goal?</p>
-                    <textarea id="goal-input" placeholder="e.g. Build a small Rust command-line calculator." style="width: 100%; height: 100px; background: #000; color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; margin-bottom: 1rem; border-radius: 4px;"></textarea>
-                    <div class="actions">
-                        <button id="start-init-btn" class="primary">Initialize Project</button>
-                    </div>
-                </div>
-
+                <div class="brand-lockup"><span class="brand-symbol" aria-hidden="true">✦</span><span>MAGY</span></div>
+                <p class="eyebrow">LOCAL AI ENGINEERING WORKBENCH</p>
+                <h1 id="startup-title">Ship with a runtime you can trust.</h1>
+                <p class="startup-copy">Magy keeps reasoning local and execution inside the project boundary.</p>
                 <div id="startup-actions">
-                    <div class="requirements-check">
-                        <div class="check-item pass">Model Server: http://localhost:1234/v1</div>
-                        <div class="check-item pass">Model: nvidia/nemotron-3-nano-4b</div>
+                    <div class="runtime-checks" aria-label="Runtime configuration">
+                        <div><span class="check-mark" aria-hidden="true">✓</span><span>LM Studio</span><code>localhost:1234/v1</code></div>
+                        <div><span class="check-mark" aria-hidden="true">✓</span><span>Model</span><code>nvidia/nemotron-3-nano-4b</code></div>
                     </div>
-
-                    <div class="actions">
-                        <button id="load-project-btn" class="primary">Load Project</button>
-                    </div>
+                    <button id="load-project-btn" class="button primary button-wide" type="button">Open project</button>
                 </div>
+                <div id="init-zone" class="init-zone" hidden>
+                    <label for="goal-input">What are we building?</label>
+                    <textarea id="goal-input" rows="4" placeholder="Describe the outcome you want Magy to work toward…"></textarea>
+                    <button id="start-init-btn" class="button primary button-wide" type="button">Initialize project</button>
+                </div>
+                <p id="startup-error" class="inline-error" role="alert" hidden></p>
             </div>
-        </div>
+        </section>
 
-        <!-- Main Workspace -->
-        <div id="workspace" class="hidden">
-            <header class="workspace-header">
-                <div class="brand-mark"><span class="brand-dot"></span> MAGY</div>
-                <div class="workspace-context">
+        <div id="workspace" class="workspace" hidden>
+            <header class="topbar">
+                <a class="brand-lockup topbar-brand" href="#" aria-label="Magy overview"><span class="brand-symbol" aria-hidden="true">✦</span><span>MAGY</span></a>
+                <div class="project-context">
+                    <span id="header-project-name">Project</span>
+                    <span class="context-divider" aria-hidden="true">/</span>
                     <span id="run-summary">Ready to work</span>
-                    <span class="connection-pill"><span class="connection-dot"></span> Local model</span>
                 </div>
-                <div class="header-actions">
-                    <button id="toggle-inspector-btn" class="ghost-button compact" type="button">Inspector</button>
-                    <button id="focus-chat-btn" class="primary compact" type="button">New message</button>
+                <div class="topbar-actions">
+                    <span class="connection-pill"><span class="connection-dot" aria-hidden="true"></span>Local model</span>
+                    <button id="header-run-btn" class="button primary compact" type="button">Run task</button>
                 </div>
             </header>
-            <nav class="activity-rail" aria-label="Workspace navigation">
-                <button class="rail-button active" data-panel="overview" title="Overview">⌂<span>Overview</span></button>
-                <button class="rail-button" data-panel="activity" title="Activity">≡<span>Activity</span></button>
-                <button class="rail-button" data-panel="chat" title="Chat">◌<span>Chat</span></button>
-                <button class="rail-button" data-panel="tasks" title="Tasks">✓<span>Tasks</span></button>
-                <button class="rail-button" data-panel="source" title="Source control">⑂<span>Source</span></button>
-                <button class="rail-button" data-panel="settings" title="Settings">⚙<span>Settings</span></button>
-            </nav>
-            <aside id="panel-drawer" class="panel-drawer">
-                <div class="drawer-heading"><span id="drawer-title">Overview</span><button id="close-drawer-btn" class="icon-button" type="button">×</button></div>
-                <div id="drawer-content"></div>
-            </aside>
-            <main class="workbench">
-                <section id="overview-panel" class="workbench-panel active-panel">
-                    <div class="overview-hero">
-                        <div><span class="eyebrow">PROJECT WORKBENCH</span><h1 id="overview-project-name">Welcome to Magy</h1><p id="overview-goal">Load a project to begin.</p></div>
-                        <span id="agent-status" class="status-badge">Idle</span>
-                    </div>
-                    <div class="overview-grid">
-                        <article class="summary-card"><span class="card-label">Active task</span><strong id="overview-task">No task selected</strong><button class="text-button" data-panel-target="tasks" type="button">View tasks →</button></article>
-                        <article class="summary-card"><span class="card-label">Repository</span><strong id="overview-repo">Checking…</strong><span id="overview-branch" class="muted-text">—</span></article>
-                        <article class="summary-card"><span class="card-label">Run state</span><strong id="overview-run-state">Ready</strong><span id="overview-evidence" class="muted-text">Verification pending</span></article>
-                    </div>
-                    <div class="overview-actions"><button class="primary" id="overview-run-btn" type="button">Start task</button><button class="secondary" data-panel-target="chat" type="button">Ask Magy</button><button class="secondary" data-panel-target="source" type="button">Review changes</button></div>
-                </section>
-                <section id="activity-panel" class="workbench-panel">
-                    <div class="panel-title-row"><div><span class="eyebrow">AGENT TRACE</span><h1>Activity</h1><p>Actions are summarized here; expand a card to inspect details.</p></div><button id="clear-feed-btn" class="ghost-button" type="button">Clear activity</button></div>
-                    <div id="feed-container"></div>
-                </section>
-                <section id="chat-panel" class="workbench-panel">
-                    <div class="panel-title-row"><div><span class="eyebrow">CONVERSATION</span><h1>Chat with Magy</h1><p>Ask questions without starting an execution cycle.</p></div><span class="mode-pill">Chat mode</span></div>
-                    <div id="chat-feed" class="chat-feed"></div>
-                </section>
-                <section id="tasks-panel" class="workbench-panel"><div class="panel-title-row"><div><span class="eyebrow">PLAN</span><h1>Tasks</h1><p>Track the project plan and the active unit of work.</p></div><span id="task-count" class="count-pill">0</span></div><ul id="task-list" class="full-task-list"></ul></section>
-                <section id="source-panel" class="workbench-panel"><div class="panel-title-row"><div><span class="eyebrow">SOURCE CONTROL</span><h1>Repository</h1><p>Review local Git state and open the remote repository.</p></div><button id="refresh-github-btn" class="ghost-button" type="button">Refresh</button></div><div class="source-overview-card"><span id="sc-status" class="sc-dot"></span><strong id="github-repo-name">Checking repository…</strong><span id="github-branch" class="muted-text">—</span><button id="open-github-btn" class="primary hidden" type="button">Open GitHub</button></div></section>
-                <section id="settings-panel" class="workbench-panel"><div class="panel-title-row"><div><span class="eyebrow">CONFIGURATION</span><h1>Execution settings</h1><p>Control how Magy handles safe tools and verification.</p></div></div><div class="settings-card"><label class="toggle-row"><input type="checkbox" id="auto-approve-tools"><span>Auto-execute safe tools</span></label><p class="setting-hint">Writes run automatically. Commands still require an exact allowlist match.</p><div class="config-summary"><span id="step-summary">0 steps</span><span id="verify-summary">0 checks</span></div></div></section>
-                <form id="chat-form" class="chat-composer"><textarea id="chat-input" rows="1" autocomplete="off" placeholder="Ask a question or describe a change..."></textarea><div class="composer-actions"><div class="quick-prompts"><button type="button" class="quick-prompt" data-prompt="Inspect the project and summarize what needs attention.">Inspect project</button><button type="button" class="quick-prompt" data-prompt="Show me what changed and whether it is verified.">Review changes</button></div><button class="primary" type="submit">Send <span class="send-hint">Enter</span></button></div></form>
-                <div id="interaction-zone" class="hidden"><div class="approval-card"><div class="approval-header">Action Requires Approval</div><div class="approval-body"><pre id="pending-tool-request"></pre></div><div class="approval-actions"><button id="deny-btn" class="secondary">Deny</button><button id="approve-btn" class="primary">Approve</button></div></div></div>
-            </main>
-            <aside id="inspector" class="inspector hidden"><div class="drawer-heading"><span>Inspector</span><button id="close-inspector-btn" class="icon-button" type="button">×</button></div><div id="inspector-content"><p class="muted-text">Select an activity step or pending action to inspect it.</p></div></aside>
-        </div>
 
-        <!-- Global Progress Bar -->
-        <div id="execution-progress" class="progress-bar-container hidden">
-            <div class="progress-bar-fill"></div>
-            <div class="progress-text">Executing Reasoning Step...</div>
+            <nav class="rail" aria-label="Workspace navigation">
+                <button class="rail-button active" data-panel="overview" type="button" aria-current="page"><span class="rail-icon" aria-hidden="true">⌂</span><span>Overview</span></button>
+                <button class="rail-button" data-panel="activity" type="button"><span class="rail-icon" aria-hidden="true">≡</span><span>Activity</span><span id="activity-count" class="rail-count" hidden>0</span></button>
+                <button class="rail-button" data-panel="chat" type="button"><span class="rail-icon" aria-hidden="true">◌</span><span>Chat</span></button>
+                <button class="rail-button" data-panel="tasks" type="button"><span class="rail-icon" aria-hidden="true">✓</span><span>Tasks</span></button>
+                <button class="rail-button" data-panel="source" type="button"><span class="rail-icon" aria-hidden="true">⑂</span><span>Source</span></button>
+                <span class="rail-spacer"></span>
+                <button class="rail-button" data-panel="settings" type="button"><span class="rail-icon" aria-hidden="true">⚙</span><span>Settings</span></button>
+            </nav>
+
+            <main class="content" aria-live="polite">
+                <section id="overview-panel" class="panel active-panel" aria-labelledby="overview-title">
+                    <div class="panel-heading hero-heading">
+                        <div>
+                            <p class="eyebrow">PROJECT OVERVIEW</p>
+                            <h1 id="overview-title"><span id="overview-project-name">Welcome to Magy</span></h1>
+                            <p id="overview-goal" class="lede">Load a project to see its plan and runtime state.</p>
+                        </div>
+                        <span id="agent-status" class="status-badge" data-status="idle">Idle</span>
+                    </div>
+                    <div class="metric-grid">
+                        <article class="metric-card">
+                            <span class="metric-label">Active task</span>
+                            <strong id="overview-task">No task selected</strong>
+                            <button class="link-button" data-panel-target="tasks" type="button">View plan <span aria-hidden="true">→</span></button>
+                        </article>
+                        <article class="metric-card">
+                            <span class="metric-label">Repository</span>
+                            <strong id="overview-repo">Checking…</strong>
+                            <span id="overview-branch" class="muted">—</span>
+                        </article>
+                        <article class="metric-card">
+                            <span class="metric-label">Run state</span>
+                            <strong id="overview-run-state">Ready</strong>
+                            <span id="overview-evidence" class="muted">Verification pending</span>
+                        </article>
+                    </div>
+                    <div class="overview-lower">
+                        <article class="surface-card next-card">
+                            <div class="card-heading"><div><p class="eyebrow">NEXT UP</p><h2>Keep the loop moving</h2></div><span class="card-icon" aria-hidden="true">↗</span></div>
+                            <p>Run the active task, or ask Magy to explain the project before making a change.</p>
+                            <div class="button-row"><button id="overview-run-btn" class="button primary" type="button">Start active task</button><button class="button secondary" data-panel-target="chat" type="button">Ask Magy</button></div>
+                        </article>
+                        <article class="surface-card trust-card">
+                            <div class="card-heading"><div><p class="eyebrow">RUNTIME GUARDRAILS</p><h2>Safe by default</h2></div><span class="status-dot success" aria-hidden="true"></span></div>
+                            <p>Read-only tools run automatically. Writes pause for your approval, and commands require an exact allowlist match.</p>
+                            <button class="link-button" data-panel-target="settings" type="button">Review settings <span aria-hidden="true">→</span></button>
+                        </article>
+                    </div>
+                </section>
+
+                <section id="activity-panel" class="panel" aria-labelledby="activity-title" hidden>
+                    <div class="panel-heading">
+                        <div><p class="eyebrow">AGENT TRACE</p><h1 id="activity-title">Activity</h1><p class="lede">A readable timeline of reasoning, tools, and verification.</p></div>
+                        <button id="clear-feed-btn" class="button ghost compact" type="button">Clear</button>
+                    </div>
+                    <div id="feed-container" class="activity-list">
+                        <div class="empty-state"><span class="empty-glyph" aria-hidden="true">✦</span><h2>No activity yet</h2><p>Start a task to watch Magy work.</p></div>
+                    </div>
+                </section>
+
+                <section id="chat-panel" class="panel chat-panel" aria-labelledby="chat-title" hidden>
+                    <div class="panel-heading"><div><p class="eyebrow">CONVERSATION</p><h1 id="chat-title">Chat with Magy</h1><p class="lede">Ask questions without starting an execution cycle.</p></div><span class="mode-pill">Chat mode</span></div>
+                    <div id="chat-feed" class="chat-feed"><div class="empty-state chat-empty"><span class="empty-glyph" aria-hidden="true">◌</span><h2>Start a conversation</h2><p>Ask about the project, its plan, or a change you are considering.</p></div></div>
+                    <form id="chat-form" class="chat-composer">
+                        <textarea id="chat-input" rows="1" autocomplete="off" placeholder="Ask a question or describe a change…"></textarea>
+                        <div class="composer-footer"><div class="quick-prompts"><button class="quick-prompt" data-prompt="Inspect the project and summarize what needs attention." type="button">Inspect project</button><button class="quick-prompt" data-prompt="Show me what changed and whether it is verified." type="button">Review changes</button></div><button class="button primary send-button" type="submit">Send <kbd>Enter</kbd></button></div>
+                    </form>
+                </section>
+
+                <section id="tasks-panel" class="panel" aria-labelledby="tasks-title" hidden>
+                    <div class="panel-heading"><div><p class="eyebrow">PROJECT PLAN</p><h1 id="tasks-title">Tasks</h1><p class="lede">Track the work Magy can select and complete.</p></div><span id="task-count" class="count-pill">0 tasks</span></div>
+                    <ul id="task-list" class="task-grid"></ul>
+                </section>
+
+                <section id="source-panel" class="panel" aria-labelledby="source-title" hidden>
+                    <div class="panel-heading"><div><p class="eyebrow">SOURCE CONTROL</p><h1 id="source-title">Repository</h1><p class="lede">Read-only Git and GitHub information for this project.</p></div><button id="refresh-github-btn" class="button ghost compact" type="button">Refresh</button></div>
+                    <article class="surface-card repository-card"><div class="repo-status"><span id="sc-status" class="status-dot" aria-hidden="true"></span><div><h2 id="github-repo-name">Checking repository…</h2><p id="github-branch" class="muted">—</p></div></div><button id="open-github-btn" class="button secondary hidden" type="button">Open on GitHub <span aria-hidden="true">↗</span></button></article>
+                    <div class="source-note"><span aria-hidden="true">ⓘ</span><p>Magy does not push or modify Git history. Use Chat to ask the agent to inspect changes.</p></div>
+                </section>
+
+                <section id="settings-panel" class="panel" aria-labelledby="settings-title" hidden>
+                    <div class="panel-heading"><div><p class="eyebrow">CONFIGURATION</p><h1 id="settings-title">Execution settings</h1><p class="lede">Choose how much autonomy the runtime has.</p></div></div>
+                    <article class="surface-card settings-card"><div class="setting-main"><div><h2>Auto-execute safe tools</h2><p>Read-only file and discovery tools can run without pausing.</p></div><label class="switch"><input type="checkbox" id="auto-approve-tools"><span class="switch-track" aria-hidden="true"></span><span class="sr-only">Auto-execute safe tools</span></label></div><div class="setting-divider"></div><div class="setting-meta"><span>Writes still require approval</span><span>Commands require an exact allowlist</span></div></article>
+                    <div class="runtime-summary"><div><span class="eyebrow">THIS RUN</span><strong id="step-summary">0 steps</strong></div><div><span class="eyebrow">VERIFICATION</span><strong id="verify-summary">0 checks</strong></div></div>
+                </section>
+            </main>
+
+            <div id="execution-progress" class="progress-line" hidden><span class="progress-fill"></span><span class="progress-label">Executing reasoning step…</span></div>
+            <div id="interaction-zone" class="modal-backdrop" hidden>
+                <article class="approval-card" role="dialog" aria-modal="true" aria-labelledby="approval-title">
+                    <div class="approval-heading"><span class="warning-icon" aria-hidden="true">!</span><div><p class="eyebrow">OPERATOR DECISION</p><h2 id="approval-title">Action requires approval</h2></div></div>
+                    <p class="approval-copy">Magy wants to perform the following action inside your project.</p>
+                    <pre id="pending-tool-request" class="code-block"></pre>
+                    <div class="approval-actions"><button id="deny-btn" class="button secondary" type="button">Deny</button><button id="approve-btn" class="button primary" type="button">Approve action</button></div>
+                </article>
+            </div>
         </div>
+        <div id="toast-region" class="toast-region" aria-live="assertive" aria-atomic="true"></div>
     </div>
     <script src="app.js"></script>
 </body>

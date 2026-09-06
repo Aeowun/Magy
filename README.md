@@ -1,21 +1,27 @@
 # Magy
 
-Magy is a local AI software engineering system.
+Magy is a local AI software engineering system built around a simple principle:
 
-The model proposes actions. The runtime validates and executes them according to the system's rules.
+> **The AI decides what it wants to do. The runtime decides what it is allowed to do.**
 
-Magy consists of a Rust core, model-provider interfaces, controlled tools, project state, and a graphical user interface.
+Magy is designed to help a developer give an AI agent a real software project and let it make useful, verifiable progress inside a controlled environment.
 
-## Architecture
+The system is built around a Rust core, explicit execution boundaries, replaceable model providers, and controlled tools.
 
-Magy separates model reasoning from action execution.
+## Philosophy
+
+Magy is not intended to be an AI that is given unrestricted access to a machine and told to "figure it out."
+
+Instead, the system separates **reasoning** from **authority**.
+
+The model can reason about a project and request actions.
+
+The runtime determines whether those actions are valid, permitted, and safe to execute.
 
 ```text
 User
  ↓
-Magy App (UI)
- ↓
-Coordinator
+Magy
  ├── Project State
  ├── Agent
  ├── Model
@@ -26,178 +32,332 @@ Coordinator
    Project
 ```
 
-The model does not directly modify the project. It produces requests that are interpreted and executed by the runtime.
+This separation is fundamental to the architecture.
 
-## Usage
+## Architecture
 
-### Requirements
-
-Magy expects a local model server running at:
+Magy is organized around a small layered core:
 
 ```text
-http://localhost:1234/v1
+Application
+    ↓
+Domain
+    ↓
+Infrastructure
 ```
 
-LM Studio works by default.
+### Domain
 
-Load a chat/instruct model before starting Magy.
+The domain defines Magy's rules and core concepts.
 
-### Run Magy
+It contains the models and state required to represent:
 
-Start the Magy application:
+* projects
+* project tasks
+* agent state
+* model interactions
+* tool requests and results
+* planning and execution concepts
+
+The domain is intended to remain independent of specific UI frameworks, model providers, and operating-system details.
+
+### Application
+
+The application layer coordinates operations across the domain and infrastructure.
+
+It is responsible for turning higher-level intent into controlled execution while preserving domain rules and state transitions.
+
+### Infrastructure
+
+Infrastructure provides the concrete mechanisms required by the system, including filesystem access and communication with model providers.
+
+Infrastructure is where external systems are integrated without allowing them to define Magy's core behavior.
+
+## Agent Model
+
+Magy's agent is modeled as an explicit state machine.
+
+The general lifecycle is:
 
 ```text
-cargo run -p magy-app
+Idle
+  ↓
+Planning
+  ↓
+Executing
+  ↓
+Verifying
+  ↓
+Planning
 ```
 
-Then open your browser to `http://localhost:3000`.
-
-On Windows, double-click `launch-magy.bat` to build, start the local app, and
-open the browser automatically. For a persistent developer shell, run:
-
-```powershell
-.\magy-shell.ps1 -Command test
-.\magy-shell.ps1 -Command run
-.\magy-shell.ps1 -Command cli -ProjectPath C:\path\to\project
-```
-
-Alternatively, double-click `magy-shell.bat` to open a PowerShell window
-already rooted at the repository.
-
-### To load a project
-
-1.  Click **Load Project**.
-2.  Select a project directory via the native folder picker. Magy will set this as the project root.
-3.  If the directory is missing a `Project.md`, Magy will ask "What are we building?". Enter your goal, and Magy will generate the project specification for you.
-
-### How It Works
-
-Magy reads the project, plans work, and asks the model what to do.
-
-*   **Read-only actions** (like reading files or listing directories) run automatically.
-*   **Restricted actions** (like writing files or executing commands) require explicit operator approval in the UI.
-*   **Commands** are deny-by-default and must exactly match an allowlisted command
-    before an approval prompt is shown.
-*   Denied actions are recorded in the activity feed and the agent asks the model
-    for a replacement action instead of silently ending the run.
-*   The workspace includes an **Auto-execute safe tools** toggle. It can
-    automatically execute file writes; shell commands remain restricted to the
-    exact command allowlist.
-*   **Verification**: After changes are made, Magy selects a project-aware verifier:
-    `cargo test` for Rust, `npm test` for Node projects, `pytest` for Python
-    projects. Projects without a recognized runner cannot be marked complete
-    automatically; declare an acceptance command in `Project.md` under a
-    `Verification` section, or provide an explicit CLI command.
-*   **Verification failures** are warnings with captured output, not runtime
-    errors. Magy may retry within its configured bound, but it never treats a
-    model claim or generic file scan as acceptance evidence.
-*   **Conversational chat** is available from the workspace composer and does
-    not start a tool-execution run.
-
-A task is complete when verification succeeds.
-
-An approved write is executed only after the active task is restored in the
-agent state. Failed approval resolution is surfaced to the UI and does not
-resume the agent.
-
-## Configuration
-
-Magy uses deterministic bounds found in the coordination logic (and eventually in configuration files):
-
-*   **max-steps**: Maximum reasoning steps per task execution cycle.
-*   **max-verifications**: Maximum verification retries per task.
-
-The CLI accepts `auto` as the verification command (the default), or an explicit
-command when the project requires custom verification:
+The agent also has explicit mechanisms for:
 
 ```text
-magy C:\path\to\project auto
-magy C:\path\to\project "npm run lint"
+Pause
+Resume
+Stop
+Failure
+Completion
 ```
 
-For projects without a standard test runner, define the acceptance contract
-explicitly:
+State transitions are deliberate rather than implicit.
+
+This allows the execution engine to reason about what the agent is currently allowed to do and makes invalid transitions observable instead of silently producing inconsistent state.
+
+## Projects
+
+Magy operates on a user-selected project directory.
+
+The project provides the context in which the agent is allowed to operate.
+
+A project is described by a `Project.md` specification containing information such as:
 
 ```text
-Verification
-- node scripts/check-acceptance.js
+Project
+
+Goal
+
+Requirements
+
+Constraints
+
+Definition of Done
+
+Tasks
+
+Current Status
 ```
 
-Magy only marks a task complete when this command exits successfully. A model
-claim, file scan, or generic static check is not acceptance evidence.
+The project specification acts as a human-readable source of project intent while the Rust domain model provides the structured representation used by the runtime.
 
-The app rejects overlapping runs, surfaces project/worker failures, retries
-malformed structured actions when they contain a JSON-like response, and serves
-the bundled UI from an absolute workspace path so launch location does not
-change static asset behavior.
+## Context and Planning
 
-The workspace UI includes a persistent activity header, task counts, run state,
-quick prompts, multi-line chat input, keyboard send (`Enter`), clearable
-activity, responsive mobile layout, and non-blocking error toasts. Chat and
-agent activity remain distinct so a conversation does not get buried in raw
-tool output.
+Before meaningful work can be performed, Magy needs to understand the project it has been given.
 
-The workspace also detects the current Git branch and GitHub origin, shows the
-number of changed files, and can open the repository on GitHub. This first
-integration is intentionally read-only: it does not store credentials, push,
-create pull requests, or perform remote mutations.
+The system therefore separates:
 
-Workspace panels are collapsible: Project context, Tasks, Source control, and
-Execution settings can be folded independently, while the approval card and
-chat composer remain available. Activity details can also be collapsed when a
-long run produces a dense trace.
+```text
+Project
+   ↓
+Project Context
+   ↓
+Plan
+   ↓
+Execution
+```
 
-The workbench UI uses a VS Code-inspired shell with a navigation rail,
-Overview, Activity, Chat, Tasks, Source, and Settings surfaces, plus a
-collapsible inspector for step context. Raw agent activity is separated from
-conversation, and the Overview is the default project landing surface.
+Project context represents the relevant project structure and information available to the agent.
+
+Planning converts the project's current state into actionable work while preserving deterministic project semantics.
+
+The model may participate in reasoning, but the runtime remains responsible for enforcing project boundaries and execution rules.
 
 ## Models
 
-Models are accessed through a provider interface, allowing different local model backends to be used without changing the core agent.
+Magy treats AI models as replaceable components.
 
-Magy utilizes **JSON Schema enforcement** to ensure model tool calls are syntactically valid. To ensure reliability with small local models, Magy uses a **flat discriminator schema** that avoids the semantic degradation often caused by complex branching.
-The runtime also validates the semantics of that flat shape: each tool may only
-populate its applicable fields, required values must be non-empty, and
-contradictory requests are rejected as retryable model errors rather than being
-silently coerced.
-After a successful write, Magy rebuilds the project context before asking for
-the next action, so the model sees the current on-disk files instead of a stale
-snapshot.
+The core communicates with models through a provider abstraction rather than embedding one specific model implementation into the agent itself.
+
+Conceptually:
+
+```text
+Agent
+   ↓
+Model Provider
+   ↓
+Local Model Runtime
+```
+
+This allows different local model backends to be introduced without redesigning the agent architecture.
 
 ## Tools
 
-Magy currently provides:
+Models do not directly manipulate the filesystem.
+
+Instead, the model requests an operation through a controlled tool interface:
 
 ```text
-read_file
-write_file
-list_directory
-discover_files
-git_status
-git_diff
-run_command
-task_complete
+Model
+  ↓
+Tool Request
+  ↓
+Magy Runtime
+  ↓
+Tool
+  ↓
+Tool Result
+  ↓
+Model
 ```
 
-Tool execution is strictly constrained to the selected project directory.
-Writes are size-bounded and use synchronized temporary-file replacement. Command
-execution has a wall-clock timeout and bounded captured output.
+Tools provide an explicit authority boundary between what the model **wants** to do and what Magy **allows** it to do.
+
+This is intended to make model actions inspectable, testable, and enforceable.
+
+### Secure execution policy
+
+Tool requests are evaluated by an explicit approval policy before execution.
+The default policy:
+
+* approves `ReadFile`, `ListDirectory`, and `DiscoverFiles`;
+* marks `WriteFile` as pending for explicit approval; and
+* denies `RunCommand`.
+
+Applications that intentionally permit commands can use
+`AllowlistApprovalPolicy` and add exact command strings with
+`allow_command(...)`. Writes can be explicitly enabled with `allow_writes()`.
+The policy-enforced `execute_tool_with_policy` API is available alongside the
+legacy execution API for trusted callers.
+
+Model actions are parsed into typed `ModelAction` values from raw JSON, fenced
+JSON, or an `{ "action": ... }` envelope. Arbitrary prose is not executable.
+
+## Safety Boundary
+
+A selected project directory is treated as a security boundary.
+
+Operations performed through Magy's filesystem runtime are constrained to that project.
+
+The runtime is responsible for handling issues such as:
+
+* path traversal
+* canonicalization
+* sibling-prefix collisions
+* symbolic links
+* junctions and other reparse points
+* controlled recursive discovery
+
+Filesystem writes use a temporary file, flush/sync, and atomic replacement.
+The default limits are 4 MiB per file, 10,000 entries per directory, and
+100,000 discovered entries. File, context, history, command, and cycle limits
+can be configured through the corresponding execution APIs; directory and
+discovery guards use the published runtime constants.
+
+Higher-level code should use these protected operations rather than bypassing them.
+
+The security model is intentionally explicit about its guarantees and limitations. Magy does not claim that filesystem path validation eliminates every possible race condition between validation and use.
+
+## Bounded execution and audit
+
+Execution contracts support limits for model steps (32 by default), model
+history (64 steps), model context (8 MiB), command output (1 MiB), and command
+wall-clock time (30 seconds). Command execution remains shell-based and should
+only be enabled through an approval policy. A verification policy distinguishes
+successful tool results from failures, while `AuditSink` implementations can
+record redacted request, approval, completion, and verification events without
+persisting tool output.
+
+## Determinism
+
+Deterministic behavior is a core design goal.
+
+The same inputs should produce predictable results wherever practical.
+
+This applies to areas such as:
+
+* project parsing
+* project serialization
+* agent state transitions
+* task identity
+* task selection
+* project discovery
+* planning
+* tool dispatch
+* persistence
+
+Determinism makes the system easier to test, debug, reproduce, and trust.
+
+## Verification
+
+Magy is designed around the principle that performing an action is not the same thing as proving that the work succeeded.
+
+The intended execution model is:
+
+```text
+Execute
+   ↓
+Verify
+   ↓
+Complete
+```
+
+Verification is therefore treated as part of the execution architecture rather than as an optional reporting step.
+The current default verification contract validates that a tool returned a
+successful result; project-specific test execution and richer semantic
+verification are not implemented yet.
+
+## Development
+
+Magy is under active development.
+
+The project is intentionally being built incrementally, with emphasis on:
+
+* explicit architecture
+* deterministic behavior
+* controlled execution
+* strong invariants
+* testable boundaries
+* replaceable integrations
+* small, understandable core components
+
+The architecture and public interfaces may change during development.
+
+Development history and implementation milestones are maintained separately in [`CHANGELOG.md`](CHANGELOG.md).
+
+## Repository
+
+The repository contains the Magy Rust workspace and its core libraries.
+
+The core follows the layered architecture described above rather than coupling the project directly to a desktop UI or a specific model provider.
 
 ## Building
 
-```text
+Build the project with:
+
+```bash
 cargo build
 ```
 
-Run the tests:
+Run the test suite with:
 
-```text
+```bash
 cargo test
 ```
 
+For core-library development:
+
+```bash
+cargo test -p magy-core
+```
+
+The core implementation remains a library API; policies and limits are
+configured by constructing the corresponding Rust types. The optional local
+`magy-app` host serves the browser workbench described below when that
+application is included in a workspace checkout.
+
+## Local workbench UI
+
+The `magy-ui` directory contains the dependency-free browser workbench served
+by `magy-app`. Start the app and open `http://localhost:3000` to load a
+project. The interface is organized like a compact VS Code workbench:
+
+* **Overview** summarizes the active task, repository, and run state.
+* **Activity** shows the agent trace with reasoning cards, collapsed raw tool
+  details, and verification results.
+* **Chat** provides a separate conversational surface and multiline composer.
+* **Tasks**, **Source**, and **Settings** expose the project plan, read-only
+  GitHub metadata, and safe-tool approval preference.
+
+The UI keeps the existing `/api/load-project`, `/api/initialize`, `/api/run`,
+`/api/chat`, `/api/resolve`, `/api/settings`, `/api/github-info`, and
+`/api/events` contracts unchanged. Write actions are presented in an explicit
+approval dialog, while untrusted project and model text is rendered as text
+rather than executable markup. The layout adapts to narrow screens without
+requiring a frontend dependency or build step.
+
 ## License
 
-Magy is licensed under the GNU General Public License v3.0.
+Magy is free software licensed under the **GNU General Public License v3.0**.
 
-See `LICENSE` for the full license text.
+See [`LICENSE`](LICENSE) for the full license text.
