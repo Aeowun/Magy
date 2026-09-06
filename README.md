@@ -140,6 +140,9 @@ The runtime also validates the semantics of that flat shape: each tool may only
 populate its applicable fields, required values must be non-empty, and
 contradictory requests are rejected as retryable model errors rather than being
 silently coerced.
+After a successful write, Magy rebuilds the project context before asking for
+the next action, so the model sees the current on-disk files instead of a stale
+snapshot.
 
 ## Tools
 

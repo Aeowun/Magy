@@ -16,6 +16,7 @@
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::application::approval::ApprovalPolicy;
+use crate::application::context_assembly::assemble_project_context;
 use crate::application::reasoning::run_reasoning_step;
 use crate::application::task_lifecycle::complete_current_task;
 use crate::application::verification_runner::run_verification;
@@ -41,11 +42,12 @@ pub fn run_execution_cycle(
 ) -> Result<(), Error> {
     trace.stopped_reason = String::new();
     let mut verification_count = 0;
+    let mut current_context = context.clone();
 
     for i in 0..max_steps {
         let step = match run_reasoning_step(
             agent,
-            context,
+            &current_context,
             plan,
             &trace.steps,
             provider,
@@ -147,6 +149,28 @@ pub fn run_execution_cycle(
         };
 
         trace.steps.push(step);
+
+        // Rebuild the model context after successful mutations so the next
+        // decision is based on the files that actually exist on disk.
+        if matches!(
+            trace
+                .steps
+                .last()
+                .and_then(|s| s.action_record.as_ref())
+                .map(|r| &r.outcome),
+            Some(ExecutionOutcome::Executed(ToolResult::Success))
+        ) {
+            if let Some(root) = agent.root() {
+                match assemble_project_context(root.to_path_buf(), project.clone()) {
+                    Ok(refreshed) => current_context = refreshed,
+                    Err(error) => {
+                        trace.stopped_reason =
+                            format!("Runtime error refreshing project context: {:?}", error);
+                        return Ok(());
+                    }
+                }
+            }
+        }
 
         if stop {
             return Ok(());
