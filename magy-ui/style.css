@@ -177,6 +177,14 @@ ul#task-list { list-style: none; padding: 0; }
 
 .sidebar-footer { padding: 1rem; border-top: 1px solid var(--border-color); color: var(--text-secondary); font-size: 0.75rem; }
 .config-summary { display: flex; justify-content: space-between; }
+.source-control-card { padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+.source-control-card h3 { margin: 0; font-size: .72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); }
+.sc-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: var(--text-secondary); }
+.sc-dot.connected { background: var(--status-pass); box-shadow: 0 0 8px var(--status-pass); }
+.sc-repo { margin-top: .7rem; color: var(--text-primary); font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-meta { margin-top: .25rem; color: var(--text-secondary); font-size: .72rem; }
+.sc-actions { display: flex; gap: .4rem; margin-top: .65rem; }
+.sc-actions .ghost-button { padding: .35rem .55rem; font-size: .7rem; }
 
 /* Activity Feed */
 .activity-feed {

@@ -12,7 +12,7 @@ use magy_core::{
     ExecutionTrace, LmStudioConfig, LmStudioProvider, Project,
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::Infallible, path::PathBuf, sync::Arc};
+use std::{convert::Infallible, path::PathBuf, process::Command, sync::Arc};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tower_http::services::ServeDir;
@@ -112,6 +112,7 @@ async fn main() {
         .route("/api/chat", post(chat))
         .route("/api/resolve", post(resolve_action))
         .route("/api/settings", post(update_settings))
+        .route("/api/github-info", get(github_info))
         .route("/api/events", get(events_handler))
         .fallback_service(ServeDir::new(ui_dir))
         .with_state(state);
@@ -122,6 +123,80 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+#[derive(Serialize)]
+struct GithubInfo {
+    is_git_repository: bool,
+    branch: Option<String>,
+    remote_url: Option<String>,
+    github_url: Option<String>,
+    changed_files: usize,
+    message: Option<String>,
+}
+
+async fn github_info(State(state): State<SharedState>) -> Json<serde_json::Value> {
+    let root = state.lock().await.root.clone();
+    let Some(root) = root else {
+        return Json(serde_json::json!({ "status": "error", "message": "No project loaded" }));
+    };
+
+    let result = tokio::task::spawn_blocking(move || {
+        let output = |args: &[&str]| Command::new("git").args(args).current_dir(&root).output();
+        let remote = output(&["config", "--get", "remote.origin.url"])
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+            .filter(|value| !value.is_empty());
+        let branch = output(&["branch", "--show-current"])
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+            .filter(|value| !value.is_empty());
+        let status = output(&["status", "--short"]);
+        let changed_files = status
+            .as_ref()
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| String::from_utf8_lossy(&out.stdout).lines().count())
+            .unwrap_or(0);
+
+        let github_url = remote.as_deref().and_then(github_remote_url);
+        GithubInfo {
+            is_git_repository: remote.is_some() || branch.is_some() || status.is_ok(),
+            branch,
+            remote_url: remote,
+            github_url,
+            changed_files,
+            message: None,
+        }
+    })
+    .await;
+
+    match result {
+        Ok(info) => Json(serde_json::json!({ "status": "success", "github": info })),
+        Err(_) => Json(serde_json::json!({
+            "status": "error",
+            "message": "Could not inspect the repository"
+        })),
+    }
+}
+
+fn github_remote_url(remote: &str) -> Option<String> {
+    let trimmed = remote.trim_end_matches('/');
+    let path = if let Some(value) = trimmed.strip_prefix("git@github.com:") {
+        value
+    } else if let Some(value) = trimmed.strip_prefix("https://github.com/") {
+        value
+    } else if let Some(value) = trimmed.strip_prefix("http://github.com/") {
+        value
+    } else {
+        return None;
+    };
+    Some(format!(
+        "https://github.com/{}",
+        path.trim_end_matches(".git")
+    ))
 }
 
 async fn load_project(State(state): State<SharedState>) -> Json<serde_json::Value> {

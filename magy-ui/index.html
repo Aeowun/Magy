@@ -63,6 +63,16 @@
                     </ul>
                 </nav>
 
+                <section class="source-control-card">
+                    <div class="section-heading"><h3>Source control</h3><span id="sc-status" class="sc-dot"></span></div>
+                    <div id="github-repo-name" class="sc-repo">Checking repository…</div>
+                    <div id="github-branch" class="sc-meta">—</div>
+                    <div class="sc-actions">
+                        <button id="refresh-github-btn" class="ghost-button" type="button">Refresh</button>
+                        <button id="open-github-btn" class="ghost-button hidden" type="button">Open GitHub</button>
+                    </div>
+                </section>
+
                 <footer class="sidebar-footer">
                     <label class="toggle-row">
                         <input type="checkbox" id="auto-approve-tools">

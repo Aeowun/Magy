@@ -137,6 +137,11 @@ activity, responsive mobile layout, and non-blocking error toasts. Chat and
 agent activity remain distinct so a conversation does not get buried in raw
 tool output.
 
+The workspace also detects the current Git branch and GitHub origin, shows the
+number of changed files, and can open the repository on GitHub. This first
+integration is intentionally read-only: it does not store credentials, push,
+create pull requests, or perform remote mutations.
+
 ## Models
 
 Models are accessed through a provider interface, allowing different local model backends to be used without changing the core agent.

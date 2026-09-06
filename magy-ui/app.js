@@ -36,6 +36,11 @@ const UI = {
         this.verifySummary = document.getElementById('verify-summary');
         this.taskCount = document.getElementById('task-count');
         this.activityMode = document.getElementById('activity-mode');
+        this.githubRepoName = document.getElementById('github-repo-name');
+        this.githubBranch = document.getElementById('github-branch');
+        this.githubStatus = document.getElementById('sc-status');
+        this.refreshGithubBtn = document.getElementById('refresh-github-btn');
+        this.openGithubBtn = document.getElementById('open-github-btn');
 
         this.interactionZone = document.getElementById('interaction-zone');
         this.pendingToolRequest = document.getElementById('pending-tool-request');
@@ -73,6 +78,10 @@ const UI = {
                 event.preventDefault();
                 this.chatForm.requestSubmit();
             }
+        });
+        this.refreshGithubBtn.addEventListener('click', () => this.loadGithubInfo());
+        this.openGithubBtn.addEventListener('click', () => {
+            if (this.githubUrl) window.open(this.githubUrl, '_blank', 'noopener,noreferrer');
         });
     },
 
@@ -141,7 +150,28 @@ const UI = {
         this.startupView.classList.add('hidden');
         this.workspace.classList.remove('hidden');
         this.updateProjectUI(project);
+        this.loadGithubInfo();
         this.runAgent();
+    },
+
+    async loadGithubInfo() {
+        try {
+            const data = await this.secureFetch('/api/github-info');
+            if (data.status !== 'success') return;
+            const info = data.github;
+            this.githubUrl = info.github_url;
+            this.githubRepoName.textContent = info.github_url
+                ? info.github_url.replace('https://github.com/', '')
+                : (info.is_git_repository ? 'Local Git repository' : 'Not a Git repository');
+            this.githubBranch.textContent = info.branch
+                ? `${info.branch} · ${info.changed_files} changed`
+                : 'No branch detected';
+            this.githubStatus.classList.toggle('connected', Boolean(info.github_url));
+            this.openGithubBtn.classList.toggle('hidden', !info.github_url);
+        } catch (err) {
+            this.githubRepoName.textContent = 'Repository unavailable';
+            this.githubBranch.textContent = 'Could not inspect Git metadata';
+        }
     },
 
     updateProjectUI(project) {
