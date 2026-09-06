@@ -30,6 +30,14 @@ body, html {
     display: flex;
     flex-direction: column;
 }
+.sidebar-scroll { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+.sidebar-panel { border-bottom: 1px solid var(--border-color); }
+.sidebar-panel > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: .9rem 1.25rem; color: var(--text-primary); font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; user-select: none; }
+.sidebar-panel > summary::-webkit-details-marker { display: none; }
+.sidebar-panel > summary::before { content: "›"; color: var(--text-secondary); font-size: 1.1rem; margin-right: .5rem; transform: rotate(0deg); transition: transform .2s ease; }
+.sidebar-panel[open] > summary::before { transform: rotate(90deg); }
+.sidebar-panel > summary > span:first-child { flex: 1; }
+.panel-chevron { color: var(--text-secondary); font-size: 1rem; font-weight: 400; }
 
 .hidden { display: none !important;
 }
@@ -142,7 +150,7 @@ button.secondary { background: var(--bg-tertiary); color: var(--text-primary); m
     flex-direction: column;
 }
 
-.project-header { padding: 1.5rem; border-bottom: 1px solid var(--border-color); }
+.project-header { padding: .25rem 1.25rem 1.2rem; }
 .project-header h2 { margin: 0; font-size: 1.25rem; }
 .project-header p { color: var(--text-secondary); font-size: 0.85rem; margin: 0.5rem 0; }
 
@@ -156,8 +164,9 @@ button.secondary { background: var(--bg-tertiary); color: var(--text-primary); m
     background: var(--bg-tertiary);
 }
 
-.task-list-container { flex: 1; padding: 1.5rem; overflow-y: auto; }
+.task-list-container { padding-bottom: .6rem; }
 .task-list-container h3 { font-size: 0.85rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 1px; }
+.task-list-container ul { margin: 0; padding: 0 1.25rem; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; }
 ul#task-list { list-style: none; padding: 0; }
 .task-item {
@@ -175,9 +184,11 @@ ul#task-list { list-style: none; padding: 0; }
 .task-checkbox { margin-right: 0.75rem; width: 16px; height: 16px; border: 2px solid var(--border-color); border-radius: 3px; }
 .task-item.done .task-checkbox { background: var(--status-pass); border-color: var(--status-pass); }
 
-.sidebar-footer { padding: 1rem; border-top: 1px solid var(--border-color); color: var(--text-secondary); font-size: 0.75rem; }
+.settings-panel { padding-bottom: 1rem; color: var(--text-secondary); font-size: 0.75rem; }
+.settings-panel .toggle-row, .settings-panel .setting-hint, .settings-panel .config-summary { margin-left: 1.25rem; margin-right: 1.25rem; }
 .config-summary { display: flex; justify-content: space-between; }
-.source-control-card { padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+.source-control-card { padding-bottom: 1rem; }
+.source-control-card > :not(summary) { margin-left: 1.25rem; margin-right: 1.25rem; }
 .source-control-card h3 { margin: 0; font-size: .72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); }
 .sc-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: var(--text-secondary); }
 .sc-dot.connected { background: var(--status-pass); box-shadow: 0 0 8px var(--status-pass); }
@@ -203,6 +214,9 @@ ul#task-list { list-style: none; padding: 0; }
 }
 
 .feed-heading { max-width: 800px; width: calc(100% - 4rem); margin: 1.5rem auto 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.feed-heading > div:first-child { flex: 1; }
+.feed-actions { flex-shrink: 0; }
+.feed-actions .ghost-button { padding: .35rem .55rem; font-size: .7rem; }
 .feed-heading h1 { font-size: 1.35rem; margin: 0; }
 .feed-heading p { margin: .35rem 0 0; color: var(--text-secondary); font-size: .82rem; }
 .mode-pill { color: #a5b4fc; border-color: rgba(99,102,241,.45); }
@@ -216,6 +230,9 @@ ul#task-list { list-style: none; padding: 0; }
     margin: 0 auto 2rem auto;
     animation: fadeIn 0.3s ease-out;
 }
+.details-collapsed .reasoning-block, .details-collapsed .tool-call, .details-collapsed .verification-block { display: none; }
+.details-collapsed .activity-item { margin-bottom: .5rem; }
+.details-collapsed .activity-item::before { content: "Activity step"; display: block; padding: .65rem .8rem; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-secondary); font-size: .75rem; }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 

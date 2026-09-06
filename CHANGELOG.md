@@ -40,6 +40,9 @@
   layout, and non-blocking error notifications.
 * Added read-only GitHub repository awareness: branch/origin detection, changed
   file count, and an Open GitHub shortcut without credential or push handling.
+* Added collapsible workspace panels for project context, tasks, source control,
+  and execution settings, plus a collapse-details control for long activity
+  traces.
 * Made UI asset serving independent of the process launch directory.
 * Added lifecycle hardening: overlapping runs are rejected, worker/project
   failures are surfaced, missing project state no longer panics approval

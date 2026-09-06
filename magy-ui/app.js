@@ -36,6 +36,7 @@ const UI = {
         this.verifySummary = document.getElementById('verify-summary');
         this.taskCount = document.getElementById('task-count');
         this.activityMode = document.getElementById('activity-mode');
+        this.collapseActivityBtn = document.getElementById('collapse-activity-btn');
         this.githubRepoName = document.getElementById('github-repo-name');
         this.githubBranch = document.getElementById('github-branch');
         this.githubStatus = document.getElementById('sc-status');
@@ -63,6 +64,10 @@ const UI = {
         });
         this.clearFeedBtn.addEventListener('click', () => {
             this.feedContainer.innerHTML = '<div class="empty-feed"><div class="empty-icon">✦</div><h2>Activity cleared</h2><p>New actions and messages will appear here.</p></div>';
+        });
+        this.collapseActivityBtn.addEventListener('click', () => {
+            const collapsed = this.feedContainer.classList.toggle('details-collapsed');
+            this.collapseActivityBtn.textContent = collapsed ? 'Expand details' : 'Collapse details';
         });
         this.focusChatBtn.addEventListener('click', () => this.chatInput.focus());
         document.querySelectorAll('.quick-prompt').forEach(button => {

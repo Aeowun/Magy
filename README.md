@@ -142,6 +142,11 @@ number of changed files, and can open the repository on GitHub. This first
 integration is intentionally read-only: it does not store credentials, push,
 create pull requests, or perform remote mutations.
 
+Workspace panels are collapsible: Project context, Tasks, Source control, and
+Execution settings can be folded independently, while the approval card and
+chat composer remain available. Activity details can also be collapsed when a
+long run produces a dense trace.
+
 ## Models
 
 Models are accessed through a provider interface, allowing different local model backends to be used without changing the core agent.
