@@ -22,8 +22,6 @@ const UI = {
         this.startInitBtn = document.getElementById('start-init-btn');
 
         this.workspace = document.getElementById('workspace');
-        this.projectName = document.getElementById('project-name');
-        this.projectGoal = document.getElementById('project-goal');
         this.agentStatus = document.getElementById('agent-status');
         this.taskList = document.getElementById('task-list');
         this.feedContainer = document.getElementById('feed-container');
@@ -36,7 +34,6 @@ const UI = {
         this.stepSummary = document.getElementById('step-summary');
         this.verifySummary = document.getElementById('verify-summary');
         this.taskCount = document.getElementById('task-count');
-        this.activityMode = document.getElementById('activity-mode');
         this.overviewProjectName = document.getElementById('overview-project-name');
         this.overviewGoal = document.getElementById('overview-goal');
         this.overviewTask = document.getElementById('overview-task');
@@ -197,8 +194,6 @@ const UI = {
     },
 
     updateProjectUI(project) {
-        this.projectName.textContent = project.name;
-        this.projectGoal.textContent = project.goal;
         this.overviewProjectName.textContent = project.name;
         this.overviewGoal.textContent = project.goal;
         this.renderTaskList(project.tasks);

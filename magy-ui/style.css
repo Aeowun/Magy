@@ -358,16 +358,16 @@ ul#task-list { list-style: none; padding: 0; }
 }
 
 /* Workbench shell */
-#workspace { display: grid; grid-template-columns: 72px minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr); height: 100%; }
-.workspace-header { grid-column: 1 / -1; }
-.activity-rail { grid-row: 2; display: flex; flex-direction: column; align-items: center; gap: .45rem; padding: .8rem .45rem; background: #0b0d11; border-right: 1px solid var(--border-color); }
+#workspace { display: grid !important; grid-template-columns: 72px minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr); grid-template-areas: "header header" "rail workbench"; height: 100%; overflow: hidden; }
+.workspace-header { grid-area: header; min-width: 0; }
+.activity-rail { grid-area: rail; display: flex; flex-direction: column; align-items: center; gap: .45rem; padding: .8rem .45rem; background: #0b0d11; border-right: 1px solid var(--border-color); }
 .rail-button { width: 58px; min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem; color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: .35rem; font-size: 1.25rem; }
 .rail-button span { font-size: .62rem; font-weight: 600; }
 .rail-button:hover, .rail-button.active { color: var(--text-primary); background: rgba(99,102,241,.14); border-color: rgba(99,102,241,.4); }
 .panel-drawer { display: none; }
-.workbench { grid-column: 2; grid-row: 2; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-primary); }
-.workbench-panel { display: none; flex: 1; min-height: 0; overflow: auto; padding: 2.25rem clamp(1.25rem, 5vw, 5rem); }
-.workbench-panel.active-panel { display: block; }
+.workbench { grid-area: workbench; min-width: 0; min-height: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-primary); }
+#workspace .workbench-panel { display: none !important; flex: 1; min-height: 0; overflow: auto; padding: 2.25rem clamp(1.25rem, 5vw, 5rem); }
+#workspace .workbench-panel.active-panel { display: block !important; }
 .panel-title-row, .overview-hero { max-width: 1000px; margin: 0 auto 1.75rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .eyebrow { color: #a5b4fc; font-size: .68rem; font-weight: 800; letter-spacing: .14em; }
 .panel-title-row h1, .overview-hero h1 { margin: .45rem 0 .35rem; font-size: clamp(1.5rem, 3vw, 2.2rem); }
@@ -393,7 +393,7 @@ ul#task-list { list-style: none; padding: 0; }
 .icon-button { background: transparent; color: var(--text-secondary); border: 0; padding: .2rem .45rem; font-size: 1.25rem; }
 
 @media (max-width: 760px) {
-    #workspace { grid-template-columns: 58px minmax(0, 1fr); }
+    #workspace { grid-template-columns: 58px minmax(0, 1fr); grid-template-areas: "header header" "rail workbench"; }
     .rail-button { width: 48px; }
     .rail-button span { display: none; }
     .workbench-panel { padding: 1.25rem .85rem; }
