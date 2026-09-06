@@ -72,7 +72,7 @@ impl ApprovalPolicy for DefaultApprovalPolicy {
                 }
             }
             ToolRequest::RunCommand { command } => {
-                if self.allows_command(command) {
+                if !command.trim().is_empty() && self.allows_command(command) {
                     if self.auto_approve {
                         ApprovalStatus::Approved
                     } else {
@@ -227,6 +227,17 @@ mod tests {
         assert_eq!(
             policy.evaluate(&ToolRequest::RunCommand {
                 command: "curl https://example.com".to_string(),
+            }),
+            ApprovalStatus::Denied
+        );
+    }
+
+    #[test]
+    fn test_empty_command_is_denied_even_if_allowlisted() {
+        let policy = DefaultApprovalPolicy::default().allow_command("");
+        assert_eq!(
+            policy.evaluate(&ToolRequest::RunCommand {
+                command: String::new()
             }),
             ApprovalStatus::Denied
         );

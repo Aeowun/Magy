@@ -132,7 +132,14 @@ const UI = {
         this.progressBar.classList.remove('hidden');
         this.agentStatus.textContent = 'Executing';
         this.agentStatus.className = 'status-badge active';
-        await this.secureFetch('/api/run', { method: 'POST' });
+        try {
+            const result = await this.secureFetch('/api/run', { method: 'POST' });
+            if (result.status === 'error') {
+                this.showError("Agent Error", result.message);
+            }
+        } catch (err) {
+            this.agentStatus.textContent = 'Error';
+        }
     },
 
     async updateSettings() {
@@ -152,13 +159,17 @@ const UI = {
 
     async resolveAction(approved) {
         this.interactionZone.classList.add('hidden');
-        const result = await this.secureFetch('/api/resolve', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ index: this.currentPendingIndex, approved })
-        });
-        if (result.status === 'success') {
-            this.runAgent(); // Resume only after the action was actually resolved.
+        try {
+            const result = await this.secureFetch('/api/resolve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ index: this.currentPendingIndex, approved })
+            });
+            if (result.status === 'success') {
+                this.runAgent(); // Resume only after the action was actually resolved.
+            }
+        } catch (err) {
+            this.showError("Approval Error", err.message);
         }
     },
 

@@ -76,6 +76,7 @@ struct AppState {
     event_tx: mpsc::UnboundedSender<UiEvent>,
     auto_approve_tools: bool,
     chat_history: Vec<(String, String)>,
+    run_active: bool,
 }
 
 type SharedState = Arc<Mutex<AppState>>;
@@ -93,6 +94,7 @@ async fn main() {
         event_tx,
         auto_approve_tools: false,
         chat_history: Vec::new(),
+        run_active: false,
     }));
 
     let ui_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -188,26 +190,62 @@ async fn initialize_project(
     }
 }
 
+async fn mark_run_finished(state: &SharedState) {
+    state.lock().await.run_active = false;
+}
+
 async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> {
-    let s = state.lock().await;
-    let root = s.root.clone().ok_or("No project loaded").unwrap();
+    let mut s = state.lock().await;
+    if s.run_active {
+        return Json(
+            serde_json::json!({ "status": "error", "message": "Agent is already running" }),
+        );
+    }
+    let root = match s.root.clone() {
+        Some(root) => root,
+        None => {
+            return Json(serde_json::json!({ "status": "error", "message": "No project loaded" }));
+        }
+    };
     let event_tx = s.event_tx.clone();
     let auto_approve_tools = s.auto_approve_tools;
+    s.run_active = true;
 
     let state_ref = Arc::clone(&state);
 
     tokio::spawn(async move {
-        let res = tokio::task::spawn_blocking(move || open_project(root))
-            .await
-            .unwrap();
-        if res.is_err() {
-            return;
-        }
-
-        let (mut agent, mut project) = res.unwrap();
+        let res = match tokio::task::spawn_blocking(move || open_project(root)).await {
+            Ok(result) => result,
+            Err(error) => {
+                event_tx
+                    .send(UiEvent::Error(format!("Project worker failed: {}", error)))
+                    .ok();
+                mark_run_finished(&state_ref).await;
+                return;
+            }
+        };
+        let (mut agent, mut project) = match res {
+            Ok(value) => value,
+            Err(error) => {
+                event_tx
+                    .send(UiEvent::Error(format!("Project open failed: {:?}", error)))
+                    .ok();
+                mark_run_finished(&state_ref).await;
+                return;
+            }
+        };
 
         loop {
-            let root_path = agent.root().unwrap().to_path_buf();
+            let root_path = match agent.root() {
+                Some(root) => root.to_path_buf(),
+                None => {
+                    event_tx
+                        .send(UiEvent::Error("Agent has no project root".to_string()))
+                        .ok();
+                    mark_run_finished(&state_ref).await;
+                    break;
+                }
+            };
             let config = LmStudioConfig {
                 base_url: "http://localhost:1234/v1".to_string(),
                 model_name: "nvidia/nemotron-3-nano-4b".to_string(),
@@ -221,18 +259,26 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
                 prev_step_count = trace.steps.len();
             }
 
-            let run_res = tokio::task::spawn_blocking(move || {
+            let run_res = match tokio::task::spawn_blocking(move || {
                 let verification_command =
                     recommended_verification_command(&root_path).unwrap_or_default();
-                let context = assemble_project_context(root_path, project.clone()).unwrap();
-                let plan = plan_execution(&agent, &context).unwrap();
+                let context = match assemble_project_context(root_path, project.clone()) {
+                    Ok(value) => value,
+                    Err(error) => return (Some(Err(error)), agent, project, trace),
+                };
+                let plan = match plan_execution(&agent, &context) {
+                    Ok(value) => value,
+                    Err(error) => return (Some(Err(error)), agent, project, trace),
+                };
 
                 let next_task = match plan.tasks.first() {
                     Some(t) => t.clone(),
                     None => return (None, agent, project, trace),
                 };
 
-                select_task(&mut agent, &project, &next_task.id).unwrap();
+                if let Err(error) = select_task(&mut agent, &project, &next_task.id) {
+                    return (Some(Err(error)), agent, project, trace);
+                }
 
                 let provider = LmStudioProvider::new(config);
                 let policy = DefaultApprovalPolicy::default()
@@ -254,7 +300,16 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
                 (Some(res), agent, project, trace)
             })
             .await
-            .unwrap();
+            {
+                Ok(value) => value,
+                Err(error) => {
+                    event_tx
+                        .send(UiEvent::Error(format!("Agent worker failed: {}", error)))
+                        .ok();
+                    mark_run_finished(&state_ref).await;
+                    break;
+                }
+            };
 
             let (cycle_res, agent_new, project_new, trace_new) = run_res;
             agent = agent_new;
@@ -290,6 +345,7 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
             event_tx.send(UiEvent::Stop(stop_reason.clone())).ok();
 
             if stop_reason == "Action requires approval" {
+                mark_run_finished(&state_ref).await;
                 break;
             }
 
@@ -300,6 +356,7 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
                 || stop_reason.starts_with("Verification warning")
                 || stop_reason.starts_with("Task completion rejected")
             {
+                mark_run_finished(&state_ref).await;
                 break;
             }
 
@@ -309,9 +366,11 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
 
             if let Some(Err(e)) = cycle_res {
                 event_tx.send(UiEvent::Error(format!("{:?}", e))).ok();
+                mark_run_finished(&state_ref).await;
                 break;
             }
             if cycle_res.is_none() {
+                mark_run_finished(&state_ref).await;
                 break; // No more tasks
             }
         }
@@ -418,7 +477,12 @@ async fn resolve_action(
     Json(payload): Json<ResolveRequest>,
 ) -> Json<serde_json::Value> {
     let s_lock = state.lock().await;
-    let root = s_lock.root.clone().unwrap();
+    let root = match s_lock.root.clone() {
+        Some(root) => root,
+        None => {
+            return Json(serde_json::json!({ "status": "error", "message": "No project loaded" }));
+        }
+    };
     let mut trace = s_lock.trace.clone();
     let index = payload.index;
     let approved = payload.approved;
