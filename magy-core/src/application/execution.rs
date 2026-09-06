@@ -119,8 +119,14 @@ pub fn run_execution_cycle(
 
         let stop = match record {
             None => {
-                trace.stopped_reason = "Model stopped without action".to_string();
-                true
+                if step.model_response.content.contains('{') {
+                    trace.stopped_reason =
+                        "Invalid model action; asking the model for a valid tool call".to_string();
+                    false
+                } else {
+                    trace.stopped_reason = "Model stopped without action".to_string();
+                    true
+                }
             }
             Some(r) => match r.outcome {
                 ExecutionOutcome::Denied => {
@@ -272,6 +278,49 @@ mod tests {
             trace.steps[0].action_record.as_ref().unwrap().outcome,
             ExecutionOutcome::AwaitingApproval
         );
+    }
+
+    #[test]
+    fn test_invalid_structured_action_is_retryable() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
+
+        let (mut agent, mut project) = open_project(root.clone()).unwrap();
+        let context = assemble_project_context(root.clone(), project.clone()).unwrap();
+        let plan = plan_execution(&agent, &context).unwrap();
+        select_task(&mut agent, &project, "1").unwrap();
+        let provider = MultiMockProvider {
+            responses: std::cell::RefCell::new(vec![
+                Ok(ModelResponse {
+                    content: "{\"tool\":\"write_file\",\"path\":null,\"content\":\"x\",\"command\":\"task_complete\"}".to_string(),
+                }),
+                Ok(ModelResponse {
+                    content: "{\"tool\":\"write_file\",\"path\":\"out.txt\",\"content\":\"x\",\"command\":null}".to_string(),
+                }),
+            ]),
+        };
+
+        let mut trace = ExecutionTrace::new();
+        run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            2,
+            1,
+            "echo verify",
+            &mut trace,
+        )
+        .unwrap();
+
+        assert_eq!(trace.steps.len(), 2);
+        assert!(trace.stopped_reason.contains("approval"));
+        assert!(trace.steps[0].action_record.is_none());
+        assert!(trace.steps[1].action_record.is_some());
     }
 
     #[test]

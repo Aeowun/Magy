@@ -95,6 +95,10 @@ async fn main() {
         chat_history: Vec::new(),
     }));
 
+    let ui_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("magy-app must live in the workspace")
+        .join("magy-ui");
     let app = Router::new()
         .route("/api/load-project", post(load_project))
         .route("/api/initialize", post(initialize_project))
@@ -103,7 +107,7 @@ async fn main() {
         .route("/api/resolve", post(resolve_action))
         .route("/api/settings", post(update_settings))
         .route("/api/events", get(events_handler))
-        .fallback_service(ServeDir::new("magy-ui"))
+        .fallback_service(ServeDir::new(ui_dir))
         .with_state(state);
 
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 3000));
