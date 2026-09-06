@@ -215,7 +215,7 @@ impl ModelProvider for LmStudioProvider {
                 "properties": {
                     "tool": {
                         "type": "string",
-                        "enum": ["read_file", "write_file", "list_directory", "discover_files", "run_command", "task_complete"]
+                        "enum": ["read_file", "write_file", "list_directory", "discover_files", "git_status", "git_diff", "run_command", "task_complete"]
                     },
                     "path": { "type": ["string", "null"] },
                     "content": { "type": ["string", "null"] },
@@ -303,7 +303,7 @@ mod tests {
                             "properties": {
                                 "tool": {
                                     "type": "string",
-                                    "enum": ["read_file", "write_file", "list_directory", "discover_files", "run_command", "task_complete"]
+                                    "enum": ["read_file", "write_file", "list_directory", "discover_files", "git_status", "git_diff", "run_command", "task_complete"]
                                 },
                                 "path": { "type": ["string", "null"] },
                                 "content": { "type": ["string", "null"] },

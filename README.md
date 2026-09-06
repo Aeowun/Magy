@@ -153,6 +153,8 @@ read_file
 write_file
 list_directory
 discover_files
+git_status
+git_diff
 run_command
 task_complete
 ```

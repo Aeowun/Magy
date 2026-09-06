@@ -26,6 +26,8 @@ pub enum ToolRequest {
     WriteFile { path: PathBuf, content: String },
     ListDirectory { path: PathBuf },
     DiscoverFiles,
+    GitStatus,
+    GitDiff,
     RunCommand { command: String },
     TaskComplete,
 }
@@ -70,6 +72,20 @@ impl FlatToolRequest {
             "discover_files" => {
                 if self.path.is_none() && self.content.is_none() && self.command.is_none() {
                     Some(ToolRequest::DiscoverFiles)
+                } else {
+                    None
+                }
+            }
+            "git_status" => {
+                if self.path.is_none() && self.content.is_none() && self.command.is_none() {
+                    Some(ToolRequest::GitStatus)
+                } else {
+                    None
+                }
+            }
+            "git_diff" => {
+                if self.path.is_none() && self.content.is_none() && self.command.is_none() {
+                    Some(ToolRequest::GitDiff)
                 } else {
                     None
                 }

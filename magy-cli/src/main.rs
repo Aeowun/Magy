@@ -35,6 +35,7 @@ All fields (tool, path, content, command) are required. Use null when not applic
 For write_file, provide path and content only; command must be null. For run_command,
 provide command only; path and content must be null. For task_complete and
 discover_files, all three optional fields must be null.
+Use git_status and git_diff to inspect the real repository state before claiming progress.
 Only use task_complete after the requested work has actually been performed and
 no required action was denied or failed. A model assertion is not verification.
 All tool paths are relative to the selected project root; use "index.html", not

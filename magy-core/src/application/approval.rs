@@ -64,6 +64,7 @@ impl ApprovalPolicy for DefaultApprovalPolicy {
             ToolRequest::ReadFile { .. } => ApprovalStatus::Approved,
             ToolRequest::ListDirectory { .. } => ApprovalStatus::Approved,
             ToolRequest::DiscoverFiles => ApprovalStatus::Approved,
+            ToolRequest::GitStatus | ToolRequest::GitDiff => ApprovalStatus::Approved,
             ToolRequest::WriteFile { .. } => {
                 if self.auto_approve {
                     ApprovalStatus::Approved

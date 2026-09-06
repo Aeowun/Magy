@@ -33,6 +33,8 @@
   as `write_file` with a command) and empty commands are rejected explicitly.
 * Refresh project context after successful writes so subsequent model decisions
   use the current on-disk files.
+* Added read-only `git_status` and `git_diff` tools so Magy can inspect and
+  report the real repository changes before verification or completion.
 * Made UI asset serving independent of the process launch directory.
 * Added lifecycle hardening: overlapping runs are rejected, worker/project
   failures are surfaced, missing project state no longer panics approval

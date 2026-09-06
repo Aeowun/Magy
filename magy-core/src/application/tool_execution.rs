@@ -48,6 +48,14 @@ pub fn execute_tool(agent: &Agent, request: ToolRequest) -> ToolResult {
             Ok(paths) => ToolResult::Paths(paths),
             Err(e) => ToolResult::Error(format!("Discovery error: {:?}", e)),
         },
+        ToolRequest::GitStatus => match run_project_command(root, "git status --short") {
+            Ok(out) => ToolResult::Command(out),
+            Err(e) => ToolResult::Error(format!("Git status error: {:?}", e)),
+        },
+        ToolRequest::GitDiff => match run_project_command(root, "git diff --no-ext-diff -- .") {
+            Ok(out) => ToolResult::Command(out),
+            Err(e) => ToolResult::Error(format!("Git diff error: {:?}", e)),
+        },
         ToolRequest::RunCommand { command } => match run_project_command(root, &command) {
             Ok(out) => ToolResult::Command(out),
             Err(e) => ToolResult::Error(format!("Command error: {:?}", e)),
@@ -146,6 +154,19 @@ mod tests {
             assert!(paths.contains(&PathBuf::from("Project.md")));
         } else {
             panic!("Expected Paths result");
+        }
+
+        #[test]
+        fn test_execute_tool_git_status_is_read_only() {
+            let dir = tempdir().unwrap();
+            let root = dir.path().canonicalize().unwrap();
+            fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
+
+            let (mut agent, project) = open_project(root).unwrap();
+            select_task(&mut agent, &project, "1").unwrap();
+
+            let result = execute_tool(&agent, ToolRequest::GitStatus);
+            assert!(matches!(result, ToolResult::Command(_)));
         }
     }
 
