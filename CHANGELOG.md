@@ -16,6 +16,23 @@
 * Added the UI auto-execute toggle for safe file tools.
 * Added project-aware verification selection for Rust, Node, Python, and static
   projects; the CLI now defaults to `auto` instead of blindly running Cargo.
+* Added explicit `Verification` acceptance contracts in `Project.md`, with
+  project-defined commands taking precedence over auto-detected runners.
+* Prevented generic/static validation from claiming task acceptance when no
+  verifier exists.
+* Failed verification is now presented as an amber warning with output, while
+  genuine runtime and tool failures remain errors.
+* Added local conversational chat through the UI without starting an agent
+  execution cycle.
+* Fixed approval resumption to restore the active task before executing the
+  approved request, preventing approved writes from being discarded because
+  the reconstructed agent was still in planning state.
+* Added retry handling for malformed structured model actions and regression
+  coverage for invalid flat-schema requests.
+* Made UI asset serving independent of the process launch directory.
+* Added lifecycle hardening: overlapping runs are rejected, worker/project
+  failures are surfaced, missing project state no longer panics approval
+  resolution, and empty commands are denied even if accidentally allowlisted.
 
 All notable changes to Magy are documented here.
 

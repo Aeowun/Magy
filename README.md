@@ -85,11 +85,20 @@ Magy reads the project, plans work, and asks the model what to do.
     exact command allowlist.
 *   **Verification**: After changes are made, Magy selects a project-aware verifier:
     `cargo test` for Rust, `npm test` for Node projects, `pytest` for Python
-    projects, and a bounded static validation for projects without a recognized
-    test runner. Projects can declare an acceptance command in `Project.md`
-    under a `Verification` section; explicit CLI commands remain supported.
+    projects. Projects without a recognized runner cannot be marked complete
+    automatically; declare an acceptance command in `Project.md` under a
+    `Verification` section, or provide an explicit CLI command.
+*   **Verification failures** are warnings with captured output, not runtime
+    errors. Magy may retry within its configured bound, but it never treats a
+    model claim or generic file scan as acceptance evidence.
+*   **Conversational chat** is available from the workspace composer and does
+    not start a tool-execution run.
 
 A task is complete when verification succeeds.
+
+An approved write is executed only after the active task is restored in the
+agent state. Failed approval resolution is surfaced to the UI and does not
+resume the agent.
 
 ## Configuration
 
@@ -116,6 +125,11 @@ Verification
 
 Magy only marks a task complete when this command exits successfully. A model
 claim, file scan, or generic static check is not acceptance evidence.
+
+The app rejects overlapping runs, surfaces project/worker failures, retries
+malformed structured actions when they contain a JSON-like response, and serves
+the bundled UI from an absolute workspace path so launch location does not
+change static asset behavior.
 
 ## Models
 
