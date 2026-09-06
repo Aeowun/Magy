@@ -37,6 +37,17 @@
 
         <!-- Main Workspace -->
         <div id="workspace" class="hidden">
+            <header class="workspace-header">
+                <div class="brand-mark"><span class="brand-dot"></span> MAGY</div>
+                <div class="workspace-context">
+                    <span id="run-summary">Ready to work</span>
+                    <span class="connection-pill"><span class="connection-dot"></span> Local model</span>
+                </div>
+                <div class="header-actions">
+                    <button id="clear-feed-btn" class="ghost-button" type="button">Clear activity</button>
+                    <button id="focus-chat-btn" class="primary compact" type="button">New message</button>
+                </div>
+            </header>
             <!-- Sidebar -->
             <aside class="sidebar">
                 <header class="project-header">
@@ -46,7 +57,7 @@
                 </header>
 
                 <nav class="task-list-container">
-                    <h3>Tasks</h3>
+                    <div class="section-heading"><h3>Tasks</h3><span id="task-count" class="count-pill">0</span></div>
                     <ul id="task-list">
                         <!-- Tasks will be injected here -->
                     </ul>
@@ -59,21 +70,31 @@
                     </label>
                     <p class="setting-hint">Writes run automatically. Commands still require an exact allowlist match.</p>
                     <div class="config-summary">
-                        <span>Steps: 10</span>
-                        <span>Verifies: 3</span>
+                        <span id="step-summary">0 steps</span>
+                        <span id="verify-summary">0 checks</span>
                     </div>
                 </footer>
             </aside>
 
             <!-- Activity Feed -->
             <main class="activity-feed">
+                <div class="feed-heading">
+                    <div><h1>Workspace activity</h1><p>Magy will explain each action, ask before risky changes, and verify the result.</p></div>
+                    <span id="activity-mode" class="mode-pill">Assistant</span>
+                </div>
                 <div id="feed-container">
                     <!-- Activity items will be injected here -->
                 </div>
 
                 <form id="chat-form" class="chat-composer">
-                    <input id="chat-input" type="text" autocomplete="off" placeholder="Ask Magy a question...">
-                    <button class="primary" type="submit">Send</button>
+                    <textarea id="chat-input" rows="1" autocomplete="off" placeholder="Ask a question or describe a change..."></textarea>
+                    <div class="composer-actions">
+                        <div class="quick-prompts">
+                            <button type="button" class="quick-prompt" data-prompt="Inspect the project and summarize what needs attention.">Inspect project</button>
+                            <button type="button" class="quick-prompt" data-prompt="Show me what changed and whether it is verified.">Review changes</button>
+                        </div>
+                        <button class="primary" type="submit">Send <span class="send-hint">Enter</span></button>
+                    </div>
                 </form>
 
                 <!-- Interaction Zone -->

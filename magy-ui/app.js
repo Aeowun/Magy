@@ -1,5 +1,11 @@
 // Magy UI - Runtime Integration
 const UI = {
+    escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, character => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        }[character]));
+    },
+
     init() {
         this.cacheElements();
         this.bindEvents();
@@ -23,6 +29,13 @@ const UI = {
         this.feedContainer = document.getElementById('feed-container');
         this.chatForm = document.getElementById('chat-form');
         this.chatInput = document.getElementById('chat-input');
+        this.clearFeedBtn = document.getElementById('clear-feed-btn');
+        this.focusChatBtn = document.getElementById('focus-chat-btn');
+        this.runSummary = document.getElementById('run-summary');
+        this.stepSummary = document.getElementById('step-summary');
+        this.verifySummary = document.getElementById('verify-summary');
+        this.taskCount = document.getElementById('task-count');
+        this.activityMode = document.getElementById('activity-mode');
 
         this.interactionZone = document.getElementById('interaction-zone');
         this.pendingToolRequest = document.getElementById('pending-tool-request');
@@ -43,6 +56,24 @@ const UI = {
             event.preventDefault();
             this.sendChat();
         });
+        this.clearFeedBtn.addEventListener('click', () => {
+            this.feedContainer.innerHTML = '<div class="empty-feed"><div class="empty-icon">✦</div><h2>Activity cleared</h2><p>New actions and messages will appear here.</p></div>';
+        });
+        this.focusChatBtn.addEventListener('click', () => this.chatInput.focus());
+        document.querySelectorAll('.quick-prompt').forEach(button => {
+            button.addEventListener('click', () => {
+                this.chatInput.value = button.dataset.prompt;
+                this.chatInput.focus();
+                this.resizeComposer();
+            });
+        });
+        this.chatInput.addEventListener('input', () => this.resizeComposer());
+        this.chatInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                this.chatForm.requestSubmit();
+            }
+        });
     },
 
     async secureFetch(url, options = {}) {
@@ -61,7 +92,7 @@ const UI = {
     },
 
     showError(title, message) {
-        alert(`${title}\n\n${message}\n\nPlease check the backend logs for details.`);
+        this.showToast(`${title}: ${message}`, true);
         this.agentStatus.textContent = 'Error';
         this.agentStatus.className = 'status-badge fail';
         this.progressBar.classList.add('hidden');
@@ -117,6 +148,7 @@ const UI = {
         this.projectName.textContent = project.name;
         this.projectGoal.textContent = project.goal;
         this.renderTaskList(project.tasks);
+        this.taskCount.textContent = project.tasks.length;
     },
 
     renderTaskList(tasks) {
@@ -132,6 +164,8 @@ const UI = {
         this.progressBar.classList.remove('hidden');
         this.agentStatus.textContent = 'Executing';
         this.agentStatus.className = 'status-badge active';
+        this.runSummary.textContent = 'Working through the active task…';
+        this.activityMode.textContent = 'Agent running';
         try {
             const result = await this.secureFetch('/api/run', { method: 'POST' });
             if (result.status === 'error') {
@@ -160,6 +194,7 @@ const UI = {
     async resolveAction(approved) {
         this.interactionZone.classList.add('hidden');
         try {
+            this.agentStatus.textContent = approved ? 'Approved' : 'Denied';
             const result = await this.secureFetch('/api/resolve', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -200,10 +235,13 @@ const UI = {
                 break;
             case 'Step':
                 this.appendActivity(event.data.step, event.data.index);
+                this.stepSummary.textContent = `${event.data.index + 1} steps`;
                 break;
             case 'Stop':
                 this.agentStatus.textContent = 'Idle';
                 this.agentStatus.className = 'status-badge';
+                this.runSummary.textContent = event.data === 'Task completed successfully' ? 'Task completed' : event.data;
+                this.activityMode.textContent = 'Assistant';
                 this.progressBar.classList.add('hidden');
                 if (event.data === 'Action requires approval') {
                     this.showApproval();
@@ -249,6 +287,19 @@ const UI = {
         element.scrollIntoView({ behavior: 'smooth' });
     },
 
+    resizeComposer() {
+        this.chatInput.style.height = 'auto';
+        this.chatInput.style.height = `${Math.min(this.chatInput.scrollHeight, 140)}px`;
+    },
+
+    showToast(message, isError = false) {
+        const toast = document.createElement('div');
+        toast.className = `toast ${isError ? 'error' : ''}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4500);
+    },
+
     async sendChat() {
         const message = this.chatInput.value.trim();
         if (!message) return;
@@ -272,7 +323,7 @@ const UI = {
         let html = `
             <div class="reasoning-block">
                 <div class="reasoning-label">Reasoning</div>
-                <div class="reasoning-content">${step.model_response.content}</div>
+                <div class="reasoning-content">${this.escapeHtml(step.model_response.content)}</div>
             </div>
         `;
 
@@ -282,9 +333,9 @@ const UI = {
             this.lastIndex = index;
             html += `
                 <div class="tool-call">
-                    <span class="tool-label">Tool Call: ${record.request.tool}</span>
-                    <pre style="margin: 0; font-size: 0.8rem;">${JSON.stringify(record.request, null, 2)}</pre>
-                    <div style="margin-top: 0.5rem; color: #94a3b8; font-size: 0.8rem;">Outcome: ${JSON.stringify(record.outcome)}</div>
+                    <span class="tool-label">Tool Call: ${this.escapeHtml(record.request.tool)}</span>
+                    <pre style="margin: 0; font-size: 0.8rem;">${this.escapeHtml(JSON.stringify(record.request, null, 2))}</pre>
+                    <div style="margin-top: 0.5rem; color: #94a3b8; font-size: 0.8rem;">Outcome: ${this.escapeHtml(JSON.stringify(record.outcome))}</div>
                 </div>
             `;
         }
@@ -294,7 +345,7 @@ const UI = {
             html += `
                 <div class="verification-block ${ver.passed ? 'pass' : 'warn'}">
                     <span style="font-weight: bold;">Verification: ${ver.passed ? 'PASSED' : 'WARNING — CHECK FAILED'}</span>
-                    <pre style="font-size: 0.7rem; margin-top: 0.5rem; white-space: pre-wrap;">${ver.command}\n${ver.stdout}${ver.stderr}</pre>
+                    <pre style="font-size: 0.7rem; margin-top: 0.5rem; white-space: pre-wrap;">${this.escapeHtml(ver.command)}\n${this.escapeHtml(ver.stdout)}${this.escapeHtml(ver.stderr)}</pre>
                 </div>
             `;
         }

@@ -131,6 +131,12 @@ malformed structured actions when they contain a JSON-like response, and serves
 the bundled UI from an absolute workspace path so launch location does not
 change static asset behavior.
 
+The workspace UI includes a persistent activity header, task counts, run state,
+quick prompts, multi-line chat input, keyboard send (`Enter`), clearable
+activity, responsive mobile layout, and non-blocking error toasts. Chat and
+agent activity remain distinct so a conversation does not get buried in raw
+tool output.
+
 ## Models
 
 Models are accessed through a provider interface, allowing different local model backends to be used without changing the core agent.
