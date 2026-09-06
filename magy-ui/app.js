@@ -27,6 +27,7 @@ const UI = {
         this.agentStatus = document.getElementById('agent-status');
         this.taskList = document.getElementById('task-list');
         this.feedContainer = document.getElementById('feed-container');
+        this.chatFeed = document.getElementById('chat-feed');
         this.chatForm = document.getElementById('chat-form');
         this.chatInput = document.getElementById('chat-input');
         this.clearFeedBtn = document.getElementById('clear-feed-btn');
@@ -36,7 +37,18 @@ const UI = {
         this.verifySummary = document.getElementById('verify-summary');
         this.taskCount = document.getElementById('task-count');
         this.activityMode = document.getElementById('activity-mode');
-        this.collapseActivityBtn = document.getElementById('collapse-activity-btn');
+        this.overviewProjectName = document.getElementById('overview-project-name');
+        this.overviewGoal = document.getElementById('overview-goal');
+        this.overviewTask = document.getElementById('overview-task');
+        this.overviewRepo = document.getElementById('overview-repo');
+        this.overviewBranch = document.getElementById('overview-branch');
+        this.overviewRunState = document.getElementById('overview-run-state');
+        this.overviewEvidence = document.getElementById('overview-evidence');
+        this.panelDrawer = document.getElementById('panel-drawer');
+        this.drawerTitle = document.getElementById('drawer-title');
+        this.drawerContent = document.getElementById('drawer-content');
+        this.inspector = document.getElementById('inspector');
+        this.inspectorContent = document.getElementById('inspector-content');
         this.githubRepoName = document.getElementById('github-repo-name');
         this.githubBranch = document.getElementById('github-branch');
         this.githubStatus = document.getElementById('sc-status');
@@ -65,10 +77,12 @@ const UI = {
         this.clearFeedBtn.addEventListener('click', () => {
             this.feedContainer.innerHTML = '<div class="empty-feed"><div class="empty-icon">✦</div><h2>Activity cleared</h2><p>New actions and messages will appear here.</p></div>';
         });
-        this.collapseActivityBtn.addEventListener('click', () => {
-            const collapsed = this.feedContainer.classList.toggle('details-collapsed');
-            this.collapseActivityBtn.textContent = collapsed ? 'Expand details' : 'Collapse details';
-        });
+        document.querySelectorAll('.rail-button').forEach(button => button.addEventListener('click', () => this.showPanel(button.dataset.panel)));
+        document.querySelectorAll('[data-panel-target]').forEach(button => button.addEventListener('click', () => this.showPanel(button.dataset.panelTarget)));
+        document.getElementById('close-drawer-btn').addEventListener('click', () => this.panelDrawer.classList.remove('open'));
+        document.getElementById('toggle-inspector-btn').addEventListener('click', () => this.inspector.classList.toggle('hidden'));
+        document.getElementById('close-inspector-btn').addEventListener('click', () => this.inspector.classList.add('hidden'));
+        document.getElementById('overview-run-btn').addEventListener('click', () => this.runAgent());
         this.focusChatBtn.addEventListener('click', () => this.chatInput.focus());
         document.querySelectorAll('.quick-prompt').forEach(button => {
             button.addEventListener('click', () => {
@@ -155,6 +169,7 @@ const UI = {
         this.startupView.classList.add('hidden');
         this.workspace.classList.remove('hidden');
         this.updateProjectUI(project);
+        this.showPanel('overview');
         this.loadGithubInfo();
         this.runAgent();
     },
@@ -173,6 +188,8 @@ const UI = {
                 : 'No branch detected';
             this.githubStatus.classList.toggle('connected', Boolean(info.github_url));
             this.openGithubBtn.classList.toggle('hidden', !info.github_url);
+            this.overviewRepo.textContent = this.githubRepoName.textContent;
+            this.overviewBranch.textContent = this.githubBranch.textContent;
         } catch (err) {
             this.githubRepoName.textContent = 'Repository unavailable';
             this.githubBranch.textContent = 'Could not inspect Git metadata';
@@ -182,8 +199,12 @@ const UI = {
     updateProjectUI(project) {
         this.projectName.textContent = project.name;
         this.projectGoal.textContent = project.goal;
+        this.overviewProjectName.textContent = project.name;
+        this.overviewGoal.textContent = project.goal;
         this.renderTaskList(project.tasks);
         this.taskCount.textContent = project.tasks.length;
+        const active = project.tasks.find(task => task.status.toLowerCase() === 'in_progress') || project.tasks.find(task => task.status.toLowerCase() !== 'done');
+        this.overviewTask.textContent = active ? active.description : 'All tasks complete';
     },
 
     renderTaskList(tasks) {
@@ -200,7 +221,7 @@ const UI = {
         this.agentStatus.textContent = 'Executing';
         this.agentStatus.className = 'status-badge active';
         this.runSummary.textContent = 'Working through the active task…';
-        this.activityMode.textContent = 'Agent running';
+        this.overviewRunState.textContent = 'Running';
         try {
             const result = await this.secureFetch('/api/run', { method: 'POST' });
             if (result.status === 'error') {
@@ -276,7 +297,7 @@ const UI = {
                 this.agentStatus.textContent = 'Idle';
                 this.agentStatus.className = 'status-badge';
                 this.runSummary.textContent = event.data === 'Task completed successfully' ? 'Task completed' : event.data;
-                this.activityMode.textContent = 'Assistant';
+                this.overviewRunState.textContent = event.data === 'Task completed successfully' ? 'Completed' : 'Stopped';
                 this.progressBar.classList.add('hidden');
                 if (event.data === 'Action requires approval') {
                     this.showApproval();
@@ -318,8 +339,18 @@ const UI = {
         const element = document.createElement('div');
         element.className = `chat-message ${role}`;
         element.textContent = content;
-        this.feedContainer.appendChild(element);
+        this.chatFeed.appendChild(element);
         element.scrollIntoView({ behavior: 'smooth' });
+    },
+
+    showPanel(panel) {
+        document.querySelectorAll('.workbench-panel').forEach(element => element.classList.remove('active-panel'));
+        const target = document.getElementById(`${panel}-panel`);
+        if (target) target.classList.add('active-panel');
+        document.querySelectorAll('.rail-button').forEach(button => button.classList.toggle('active', button.dataset.panel === panel));
+        if (['tasks', 'source', 'settings'].includes(panel)) {
+            this.panelDrawer.classList.remove('open');
+        }
     },
 
     resizeComposer() {
@@ -386,6 +417,10 @@ const UI = {
         }
 
         element.innerHTML = html;
+        element.addEventListener('click', () => {
+            this.inspector.classList.remove('hidden');
+            this.inspectorContent.innerHTML = `<div class="inspector-card"><span class="eyebrow">STEP ${index + 1}</span><h3>${this.escapeHtml(record ? record.request.tool : 'Model response')}</h3><p class="muted-text">Expand the activity card in Activity to review the full reasoning, request, and outcome.</p></div>`;
+        });
         this.feedContainer.appendChild(element);
         element.scrollIntoView({ behavior: 'smooth' });
     },

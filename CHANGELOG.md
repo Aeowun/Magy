@@ -43,6 +43,9 @@
 * Added collapsible workspace panels for project context, tasks, source control,
   and execution settings, plus a collapse-details control for long activity
   traces.
+* Replaced the sidebar-first layout with a workbench shell: navigation rail,
+  overview landing panel, dedicated activity/chat/task/source/settings views,
+  and an inspector surface for step context.
 * Made UI asset serving independent of the process launch directory.
 * Added lifecycle hardening: overlapping runs are rejected, worker/project
   failures are surfaced, missing project state no longer panics approval

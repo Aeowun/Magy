@@ -356,3 +356,47 @@ ul#task-list { list-style: none; padding: 0; }
     .quick-prompts { display: none; }
     .send-hint { display: none; }
 }
+
+/* Workbench shell */
+#workspace { display: grid; grid-template-columns: 72px minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr); height: 100%; }
+.workspace-header { grid-column: 1 / -1; }
+.activity-rail { grid-row: 2; display: flex; flex-direction: column; align-items: center; gap: .45rem; padding: .8rem .45rem; background: #0b0d11; border-right: 1px solid var(--border-color); }
+.rail-button { width: 58px; min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem; color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: .35rem; font-size: 1.25rem; }
+.rail-button span { font-size: .62rem; font-weight: 600; }
+.rail-button:hover, .rail-button.active { color: var(--text-primary); background: rgba(99,102,241,.14); border-color: rgba(99,102,241,.4); }
+.panel-drawer { display: none; }
+.workbench { grid-column: 2; grid-row: 2; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-primary); }
+.workbench-panel { display: none; flex: 1; min-height: 0; overflow: auto; padding: 2.25rem clamp(1.25rem, 5vw, 5rem); }
+.workbench-panel.active-panel { display: block; }
+.panel-title-row, .overview-hero { max-width: 1000px; margin: 0 auto 1.75rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.eyebrow { color: #a5b4fc; font-size: .68rem; font-weight: 800; letter-spacing: .14em; }
+.panel-title-row h1, .overview-hero h1 { margin: .45rem 0 .35rem; font-size: clamp(1.5rem, 3vw, 2.2rem); }
+.panel-title-row p, .overview-hero p { margin: 0; color: var(--text-secondary); max-width: 650px; }
+.overview-grid { max-width: 1000px; margin: 2rem auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.summary-card, .settings-card, .source-overview-card { display: flex; flex-direction: column; gap: .55rem; padding: 1.25rem; border: 1px solid var(--border-color); background: var(--bg-secondary); border-radius: 10px; }
+.card-label { color: var(--text-secondary); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+.summary-card strong { font-size: 1rem; line-height: 1.4; }
+.muted-text { color: var(--text-secondary); font-size: .8rem; }
+.text-button { padding: 0; background: none; color: #a5b4fc; border: 0; text-align: left; font-size: .78rem; }
+.overview-actions { max-width: 1000px; margin: 0 auto; display: flex; gap: .7rem; }
+.full-task-list { max-width: 1000px; margin: 0 auto; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .8rem; }
+.full-task-list .task-item { min-height: 76px; }
+.source-overview-card { max-width: 1000px; margin: 3rem auto; align-items: flex-start; }
+.source-overview-card .primary { margin-top: .5rem; }
+.chat-feed { max-width: 850px; margin: 0 auto; min-height: 300px; }
+.workbench .chat-composer { width: min(850px, 100%); max-width: 850px; margin: 1rem auto 0; }
+.workbench #interaction-zone { position: absolute; left: 1rem; right: 1rem; bottom: 5.5rem; }
+#feed-container { max-width: 1000px; margin: 0 auto; padding: 0; }
+#feed-container .activity-item { max-width: none; }
+.inspector { position: absolute; z-index: 20; top: 64px; right: 0; bottom: 0; width: min(360px, 90vw); background: var(--bg-secondary); border-left: 1px solid var(--border-color); padding: 1rem; overflow: auto; }
+.drawer-heading { display: flex; justify-content: space-between; align-items: center; color: var(--text-primary); font-weight: 700; padding-bottom: 1rem; border-bottom: 1px solid var(--border-color); }
+.icon-button { background: transparent; color: var(--text-secondary); border: 0; padding: .2rem .45rem; font-size: 1.25rem; }
+
+@media (max-width: 760px) {
+    #workspace { grid-template-columns: 58px minmax(0, 1fr); }
+    .rail-button { width: 48px; }
+    .rail-button span { display: none; }
+    .workbench-panel { padding: 1.25rem .85rem; }
+    .overview-grid { grid-template-columns: 1fr; }
+    .overview-actions { flex-wrap: wrap; }
+}

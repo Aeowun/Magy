@@ -44,91 +44,50 @@
                     <span class="connection-pill"><span class="connection-dot"></span> Local model</span>
                 </div>
                 <div class="header-actions">
-                    <button id="clear-feed-btn" class="ghost-button" type="button">Clear activity</button>
+                    <button id="toggle-inspector-btn" class="ghost-button compact" type="button">Inspector</button>
                     <button id="focus-chat-btn" class="primary compact" type="button">New message</button>
                 </div>
             </header>
-            <!-- Sidebar -->
-            <aside class="sidebar">
-                <div class="sidebar-scroll">
-                    <details class="sidebar-panel project-panel" open>
-                        <summary><span>Project</span><span id="agent-status" class="status-badge">Idle</span></summary>
-                        <div class="project-header">
-                            <h2 id="project-name">magy-test</h2>
-                            <p id="project-goal">Modify the program so the test passes.</p>
-                        </div>
-                    </details>
-
-                    <details class="sidebar-panel task-list-container" open>
-                        <summary><span>Tasks</span><span id="task-count" class="count-pill">0</span></summary>
-                        <ul id="task-list">
-                            <!-- Tasks will be injected here -->
-                        </ul>
-                    </details>
-
-                    <details class="sidebar-panel source-control-card">
-                        <summary><span>Source control</span><span id="sc-status" class="sc-dot"></span></summary>
-                        <div id="github-repo-name" class="sc-repo">Checking repository…</div>
-                        <div id="github-branch" class="sc-meta">—</div>
-                        <div class="sc-actions">
-                            <button id="refresh-github-btn" class="ghost-button" type="button">Refresh</button>
-                            <button id="open-github-btn" class="ghost-button hidden" type="button">Open GitHub</button>
-                        </div>
-                    </details>
-
-                    <details class="sidebar-panel settings-panel">
-                        <summary><span>Execution settings</span><span class="panel-chevron">⌄</span></summary>
-                        <label class="toggle-row">
-                            <input type="checkbox" id="auto-approve-tools">
-                            <span>Auto-execute safe tools</span>
-                        </label>
-                        <p class="setting-hint">Writes run automatically. Commands still require an exact allowlist match.</p>
-                        <div class="config-summary">
-                            <span id="step-summary">0 steps</span>
-                            <span id="verify-summary">0 checks</span>
-                        </div>
-                    </details>
-                </div>
+            <nav class="activity-rail" aria-label="Workspace navigation">
+                <button class="rail-button active" data-panel="overview" title="Overview">⌂<span>Overview</span></button>
+                <button class="rail-button" data-panel="activity" title="Activity">≡<span>Activity</span></button>
+                <button class="rail-button" data-panel="chat" title="Chat">◌<span>Chat</span></button>
+                <button class="rail-button" data-panel="tasks" title="Tasks">✓<span>Tasks</span></button>
+                <button class="rail-button" data-panel="source" title="Source control">⑂<span>Source</span></button>
+                <button class="rail-button" data-panel="settings" title="Settings">⚙<span>Settings</span></button>
+            </nav>
+            <aside id="panel-drawer" class="panel-drawer">
+                <div class="drawer-heading"><span id="drawer-title">Overview</span><button id="close-drawer-btn" class="icon-button" type="button">×</button></div>
+                <div id="drawer-content"></div>
             </aside>
-
-            <!-- Activity Feed -->
-            <main class="activity-feed">
-                <div class="feed-heading">
-                    <div><h1>Workspace activity</h1><p>Magy will explain each action, ask before risky changes, and verify the result.</p></div>
-                    <div class="feed-actions">
-                        <button id="collapse-activity-btn" class="ghost-button" type="button">Collapse details</button>
+            <main class="workbench">
+                <section id="overview-panel" class="workbench-panel active-panel">
+                    <div class="overview-hero">
+                        <div><span class="eyebrow">PROJECT WORKBENCH</span><h1 id="overview-project-name">Welcome to Magy</h1><p id="overview-goal">Load a project to begin.</p></div>
+                        <span id="agent-status" class="status-badge">Idle</span>
                     </div>
-                    <span id="activity-mode" class="mode-pill">Assistant</span>
-                </div>
-                <div id="feed-container">
-                    <!-- Activity items will be injected here -->
-                </div>
-
-                <form id="chat-form" class="chat-composer">
-                    <textarea id="chat-input" rows="1" autocomplete="off" placeholder="Ask a question or describe a change..."></textarea>
-                    <div class="composer-actions">
-                        <div class="quick-prompts">
-                            <button type="button" class="quick-prompt" data-prompt="Inspect the project and summarize what needs attention.">Inspect project</button>
-                            <button type="button" class="quick-prompt" data-prompt="Show me what changed and whether it is verified.">Review changes</button>
-                        </div>
-                        <button class="primary" type="submit">Send <span class="send-hint">Enter</span></button>
+                    <div class="overview-grid">
+                        <article class="summary-card"><span class="card-label">Active task</span><strong id="overview-task">No task selected</strong><button class="text-button" data-panel-target="tasks" type="button">View tasks →</button></article>
+                        <article class="summary-card"><span class="card-label">Repository</span><strong id="overview-repo">Checking…</strong><span id="overview-branch" class="muted-text">—</span></article>
+                        <article class="summary-card"><span class="card-label">Run state</span><strong id="overview-run-state">Ready</strong><span id="overview-evidence" class="muted-text">Verification pending</span></article>
                     </div>
-                </form>
-
-                <!-- Interaction Zone -->
-                <div id="interaction-zone" class="hidden">
-                    <div class="approval-card">
-                        <div class="approval-header">Action Requires Approval</div>
-                        <div class="approval-body">
-                            <pre id="pending-tool-request"></pre>
-                        </div>
-                        <div class="approval-actions">
-                            <button id="deny-btn" class="secondary">Deny</button>
-                            <button id="approve-btn" class="primary">Approve</button>
-                        </div>
-                    </div>
-                </div>
+                    <div class="overview-actions"><button class="primary" id="overview-run-btn" type="button">Start task</button><button class="secondary" data-panel-target="chat" type="button">Ask Magy</button><button class="secondary" data-panel-target="source" type="button">Review changes</button></div>
+                </section>
+                <section id="activity-panel" class="workbench-panel">
+                    <div class="panel-title-row"><div><span class="eyebrow">AGENT TRACE</span><h1>Activity</h1><p>Actions are summarized here; expand a card to inspect details.</p></div><button id="clear-feed-btn" class="ghost-button" type="button">Clear activity</button></div>
+                    <div id="feed-container"></div>
+                </section>
+                <section id="chat-panel" class="workbench-panel">
+                    <div class="panel-title-row"><div><span class="eyebrow">CONVERSATION</span><h1>Chat with Magy</h1><p>Ask questions without starting an execution cycle.</p></div><span class="mode-pill">Chat mode</span></div>
+                    <div id="chat-feed" class="chat-feed"></div>
+                </section>
+                <section id="tasks-panel" class="workbench-panel"><div class="panel-title-row"><div><span class="eyebrow">PLAN</span><h1>Tasks</h1><p>Track the project plan and the active unit of work.</p></div><span id="task-count" class="count-pill">0</span></div><ul id="task-list" class="full-task-list"></ul></section>
+                <section id="source-panel" class="workbench-panel"><div class="panel-title-row"><div><span class="eyebrow">SOURCE CONTROL</span><h1>Repository</h1><p>Review local Git state and open the remote repository.</p></div><button id="refresh-github-btn" class="ghost-button" type="button">Refresh</button></div><div class="source-overview-card"><span id="sc-status" class="sc-dot"></span><strong id="github-repo-name">Checking repository…</strong><span id="github-branch" class="muted-text">—</span><button id="open-github-btn" class="primary hidden" type="button">Open GitHub</button></div></section>
+                <section id="settings-panel" class="workbench-panel"><div class="panel-title-row"><div><span class="eyebrow">CONFIGURATION</span><h1>Execution settings</h1><p>Control how Magy handles safe tools and verification.</p></div></div><div class="settings-card"><label class="toggle-row"><input type="checkbox" id="auto-approve-tools"><span>Auto-execute safe tools</span></label><p class="setting-hint">Writes run automatically. Commands still require an exact allowlist match.</p><div class="config-summary"><span id="step-summary">0 steps</span><span id="verify-summary">0 checks</span></div></div></section>
+                <form id="chat-form" class="chat-composer"><textarea id="chat-input" rows="1" autocomplete="off" placeholder="Ask a question or describe a change..."></textarea><div class="composer-actions"><div class="quick-prompts"><button type="button" class="quick-prompt" data-prompt="Inspect the project and summarize what needs attention.">Inspect project</button><button type="button" class="quick-prompt" data-prompt="Show me what changed and whether it is verified.">Review changes</button></div><button class="primary" type="submit">Send <span class="send-hint">Enter</span></button></div></form>
+                <div id="interaction-zone" class="hidden"><div class="approval-card"><div class="approval-header">Action Requires Approval</div><div class="approval-body"><pre id="pending-tool-request"></pre></div><div class="approval-actions"><button id="deny-btn" class="secondary">Deny</button><button id="approve-btn" class="primary">Approve</button></div></div></div>
             </main>
+            <aside id="inspector" class="inspector hidden"><div class="drawer-heading"><span>Inspector</span><button id="close-inspector-btn" class="icon-button" type="button">×</button></div><div id="inspector-content"><p class="muted-text">Select an activity step or pending action to inspect it.</p></div></aside>
         </div>
 
         <!-- Global Progress Bar -->

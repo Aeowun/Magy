@@ -147,6 +147,11 @@ Execution settings can be folded independently, while the approval card and
 chat composer remain available. Activity details can also be collapsed when a
 long run produces a dense trace.
 
+The workbench UI uses a VS Code-inspired shell with a navigation rail,
+Overview, Activity, Chat, Tasks, Source, and Settings surfaces, plus a
+collapsible inspector for step context. Raw agent activity is separated from
+conversation, and the Overview is the default project landing surface.
+
 ## Models
 
 Models are accessed through a provider interface, allowing different local model backends to be used without changing the core agent.
