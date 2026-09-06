@@ -426,14 +426,29 @@ async fn resolve_action(
     drop(s_lock);
 
     let res = tokio::task::spawn_blocking(move || {
-        let (agent, _) = open_project(root).unwrap();
-        let res = resolve_pending_action(&agent, &mut trace, index, approved);
-        (res, trace)
+        let result = (|| {
+            let (mut agent, project) = open_project(root).map_err(|e| format!("{:?}", e))?;
+            let task_id = trace
+                .steps
+                .get(index)
+                .and_then(|step| step.action_record.as_ref())
+                .map(|record| record.task_id.clone())
+                .ok_or_else(|| "Pending action record was not found".to_string())?;
+            select_task(&mut agent, &project, &task_id).map_err(|e| format!("{:?}", e))?;
+            resolve_pending_action(&agent, &mut trace, index, approved)
+                .map_err(|e| format!("{:?}", e))
+        })();
+        (result, trace)
     })
     .await
     .unwrap();
 
     let (resolve_res, trace_new) = res;
+
+    if let Err(message) = &resolve_res {
+        event_tx.send(UiEvent::Error(message.clone())).ok();
+        return Json(serde_json::json!({ "status": "error", "message": message }));
+    }
 
     {
         let mut s_lock = state.lock().await;
@@ -447,10 +462,7 @@ async fn resolve_action(
             .ok();
     }
 
-    match resolve_res {
-        Ok(_) => Json(serde_json::json!({ "status": "success" })),
-        Err(e) => Json(serde_json::json!({ "status": "error", "message": format!("{:?}", e) })),
-    }
+    Json(serde_json::json!({ "status": "success" }))
 }
 
 async fn events_handler(

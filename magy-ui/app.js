@@ -152,12 +152,14 @@ const UI = {
 
     async resolveAction(approved) {
         this.interactionZone.classList.add('hidden');
-        await this.secureFetch('/api/resolve', {
+        const result = await this.secureFetch('/api/resolve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ index: this.currentPendingIndex, approved })
         });
-        this.runAgent(); // Resume
+        if (result.status === 'success') {
+            this.runAgent(); // Resume only after the action was actually resolved.
+        }
     },
 
     connectSSE() {
