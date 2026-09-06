@@ -29,6 +29,8 @@
   the reconstructed agent was still in planning state.
 * Added retry handling for malformed structured model actions and regression
   coverage for invalid flat-schema requests.
+* Added semantic validation for flat tool actions so contradictory fields (such
+  as `write_file` with a command) and empty commands are rejected explicitly.
 * Made UI asset serving independent of the process launch directory.
 * Added lifecycle hardening: overlapping runs are rejected, worker/project
   failures are surfaced, missing project state no longer panics approval

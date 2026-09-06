@@ -43,20 +43,53 @@ pub struct FlatToolRequest {
 impl FlatToolRequest {
     pub fn to_tool_request(self) -> Option<ToolRequest> {
         match self.tool.as_str() {
-            "read_file" => self.path.map(|path| ToolRequest::ReadFile { path }),
-            "write_file" => {
-                if let (Some(path), Some(content)) = (self.path, self.content) {
-                    Some(ToolRequest::WriteFile { path, content })
+            "read_file" => {
+                if self.content.is_none() && self.command.is_none() {
+                    self.path.map(|path| ToolRequest::ReadFile { path })
                 } else {
                     None
                 }
             }
-            "list_directory" => self.path.map(|path| ToolRequest::ListDirectory { path }),
-            "discover_files" => Some(ToolRequest::DiscoverFiles),
-            "run_command" => self
-                .command
-                .map(|command| ToolRequest::RunCommand { command }),
-            "task_complete" => Some(ToolRequest::TaskComplete),
+
+            "write_file" => {
+                if self.command.is_none() {
+                    if let (Some(path), Some(content)) = (self.path, self.content) {
+                        return Some(ToolRequest::WriteFile { path, content });
+                    }
+                }
+
+                None
+            }
+            "list_directory" => {
+                if self.content.is_none() && self.command.is_none() {
+                    self.path.map(|path| ToolRequest::ListDirectory { path })
+                } else {
+                    None
+                }
+            }
+            "discover_files" => {
+                if self.path.is_none() && self.content.is_none() && self.command.is_none() {
+                    Some(ToolRequest::DiscoverFiles)
+                } else {
+                    None
+                }
+            }
+            "run_command" => {
+                if self.path.is_none() && self.content.is_none() {
+                    self.command
+                        .filter(|command| !command.trim().is_empty())
+                        .map(|command| ToolRequest::RunCommand { command })
+                } else {
+                    None
+                }
+            }
+            "task_complete" => {
+                if self.path.is_none() && self.content.is_none() && self.command.is_none() {
+                    Some(ToolRequest::TaskComplete)
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -77,4 +110,31 @@ pub enum ToolResult {
     Command(CommandOutput),
     Success,
     Error(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_fields_that_do_not_belong_to_write_file() {
+        let request = FlatToolRequest {
+            tool: "write_file".to_string(),
+            path: Some(PathBuf::from("index.html")),
+            content: Some("body".to_string()),
+            command: Some("task_complete".to_string()),
+        };
+        assert_eq!(request.to_tool_request(), None);
+    }
+
+    #[test]
+    fn accepts_minimal_task_complete() {
+        let request = FlatToolRequest {
+            tool: "task_complete".to_string(),
+            path: None,
+            content: None,
+            command: None,
+        };
+        assert_eq!(request.to_tool_request(), Some(ToolRequest::TaskComplete));
+    }
 }

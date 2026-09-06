@@ -136,6 +136,10 @@ change static asset behavior.
 Models are accessed through a provider interface, allowing different local model backends to be used without changing the core agent.
 
 Magy utilizes **JSON Schema enforcement** to ensure model tool calls are syntactically valid. To ensure reliability with small local models, Magy uses a **flat discriminator schema** that avoids the semantic degradation often caused by complex branching.
+The runtime also validates the semantics of that flat shape: each tool may only
+populate its applicable fields, required values must be non-empty, and
+contradictory requests are rejected as retryable model errors rather than being
+silently coerced.
 
 ## Tools
 
