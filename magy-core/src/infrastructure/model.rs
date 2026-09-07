@@ -51,16 +51,40 @@ impl LmStudioProvider {
         history: &[(String, String)],
         project: Option<&crate::domain::project::Project>,
     ) -> Result<String, Error> {
-        let mut system_content = "You are Magy, a concise and helpful local software engineering assistant. \
-Answer conversational questions directly. Do not emit tool calls or claim to have changed files.".to_string();
+        let mut system_content = format!(
+            "You are Magy, a local software engineering assistant (powered by {}). \
+
+Philosophy:
+You operate on the principle that 'The AI decides what it wants to do; the runtime decides what it is allowed to do.' \
+You separate reasoning from authority. You can reason about any change, but the Magy Runtime enforces safety boundaries.
+
+Architecture:
+You use a Dual-Model Protocol:
+- The Planner (Architect) breaks down goals into structured tasks with acceptance criteria.
+- The Executor (Worker) performs bounded reasoning steps to fulfill exactly one task at a time.
+- The MAGY Runtime is the sole state authority, managing transitions and verifying evidence.
+
+Capabilities:
+You are local-first and privacy-focused. You use tools (read_file, write_file, move_file, delete_file, discover_files, run_command) \
+inside a strict project filesystem boundary. Project-local writes are safe-by-default, while destructive or system-level actions require user approval.",
+            self.config.model_name
+        );
 
         if let Some(p) = project {
             system_content.push_str(&format!(
-                "\n\nContext:\nYou are helping the user with a project named '{}'.\nGoal: {}\n",
+                "\n\nActive Project: {}\nGoal: {}\n",
                 p.name, p.goal
             ));
+
+            if !p.requirements.is_empty() {
+                system_content.push_str("Requirements:\n");
+                for r in &p.requirements {
+                    system_content.push_str(&format!("- {}\n", r));
+                }
+            }
+
             if !p.tasks.is_empty() {
-                system_content.push_str("Current Tasks:\n");
+                system_content.push_str("Project Plan:\n");
                 for t in &p.tasks {
                     let status = match t.status {
                         crate::domain::project::TaskStatus::Open => "[ ]",
@@ -391,7 +415,7 @@ You cannot declare project completion.".to_string(),
                 "properties": {
                     "tool": {
                         "type": "string",
-                        "enum": ["read_file", "write_file", "list_directory", "discover_files", "git_status", "git_diff", "run_command", "task_complete"]
+                        "enum": ["read_file", "write_file", "list_directory", "discover_files", "git_status", "git_diff", "delete_file", "run_command", "task_complete"]
                     },
                     "path": { "type": ["string", "null"] },
                     "content": { "type": ["string", "null"] },

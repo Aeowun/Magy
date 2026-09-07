@@ -92,6 +92,46 @@ pub fn write_file(root: &Path, path: &Path, content: &str) -> Result<(), Error> 
     Ok(())
 }
 
+/// Safely deletes a file within the project boundary.
+pub fn delete_file(root: &Path, path: &Path) -> Result<(), Error> {
+    let full_path = resolve_and_validate(root, path)?;
+
+    debug!(path = ?full_path, "Deleting file");
+
+    if !full_path.is_file() {
+        debug!(path = ?full_path, "Not a file or already gone");
+        return Err(Error::FileNotFound);
+    }
+
+    fs::remove_file(full_path).map_err(|e| {
+        error!(error = ?e, "Delete error");
+        Error::Io
+    })
+}
+
+/// Safely moves/renames a file within the project boundary.
+pub fn move_file(root: &Path, from: &Path, to: &Path) -> Result<(), Error> {
+    let full_from = resolve_and_validate(root, from)?;
+    let full_to = resolve_and_validate(root, to)?;
+
+    debug!(from = ?full_from, to = ?full_to, "Moving file");
+
+    if !full_from.is_file() {
+        return Err(Error::FileNotFound);
+    }
+
+    if let Some(parent) = full_to.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).map_err(|_| Error::Io)?;
+        }
+    }
+
+    fs::rename(full_from, full_to).map_err(|e| {
+        error!(error = ?e, "Move error");
+        Error::Io
+    })
+}
+
 /// Safely lists the contents of a directory within the project boundary.
 pub fn list_directory(root: &Path, path: &Path) -> Result<Vec<DirEntry>, Error> {
     let full_path = resolve_and_validate(root, path)?;

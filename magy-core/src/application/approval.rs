@@ -16,15 +16,17 @@
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::application::tool_execution::execute_tool;
+use crate::boundary::is_within_boundary;
 use crate::domain::agent::Agent;
 use crate::domain::model::{ApprovalStatus, ExecutionOutcome, ExecutionTrace, FailureReason};
 use crate::domain::tool::ToolRequest;
 use crate::Error;
 use std::collections::BTreeSet;
+use std::path::Path;
 
 /// A policy for evaluating whether a tool request requires approval.
 pub trait ApprovalPolicy {
-    fn evaluate(&self, request: &ToolRequest) -> ApprovalStatus;
+    fn evaluate(&self, root: &Path, request: &ToolRequest) -> ApprovalStatus;
 }
 
 /// A simple deterministic approval policy.
@@ -59,28 +61,65 @@ impl DefaultApprovalPolicy {
 }
 
 impl ApprovalPolicy for DefaultApprovalPolicy {
-    fn evaluate(&self, request: &ToolRequest) -> ApprovalStatus {
+    fn evaluate(&self, root: &Path, request: &ToolRequest) -> ApprovalStatus {
         match request {
-            ToolRequest::ReadFile { .. } => ApprovalStatus::Approved,
-            ToolRequest::ListDirectory { .. } => ApprovalStatus::Approved,
-            ToolRequest::DiscoverFiles => ApprovalStatus::Approved,
-            ToolRequest::GitStatus | ToolRequest::GitDiff => ApprovalStatus::Approved,
-            ToolRequest::WriteFile { .. } => {
-                if self.auto_approve {
+            ToolRequest::ReadFile { path } => {
+                if is_within_boundary(root, &root.join(path)) {
                     ApprovalStatus::Approved
                 } else {
+                    // Crossing boundary
+                    ApprovalStatus::Pending
+                }
+            }
+            ToolRequest::ListDirectory { path } => {
+                if is_within_boundary(root, &root.join(path)) {
+                    ApprovalStatus::Approved
+                } else {
+                    // Crossing boundary
+                    ApprovalStatus::Pending
+                }
+            }
+            ToolRequest::DiscoverFiles => ApprovalStatus::Approved,
+            ToolRequest::GitStatus | ToolRequest::GitDiff => ApprovalStatus::Approved,
+            ToolRequest::WriteFile { path, .. } => {
+                if is_within_boundary(root, &root.join(path)) {
+                    // Safe-by-default project-local writes
+                    ApprovalStatus::Approved
+                } else {
+                    // Crossing boundary
+                    ApprovalStatus::Pending
+                }
+            }
+            ToolRequest::DeleteFile { .. } => {
+                // Destructive operations always require approval
+                ApprovalStatus::Pending
+            }
+            ToolRequest::MoveFile { from, to } => {
+                if is_within_boundary(root, &root.join(from))
+                    && is_within_boundary(root, &root.join(to))
+                {
+                    // Project-local move/rename is safe-by-default
+                    ApprovalStatus::Approved
+                } else {
+                    // Crossing boundary or destructive if moving out
                     ApprovalStatus::Pending
                 }
             }
             ToolRequest::RunCommand { command } => {
-                if !command.trim().is_empty() && self.allows_command(command) {
+                let trimmed = command.trim();
+                if trimmed.is_empty() {
+                    return ApprovalStatus::Denied;
+                }
+
+                if self.allows_command(trimmed) {
                     if self.auto_approve {
                         ApprovalStatus::Approved
                     } else {
                         ApprovalStatus::Pending
                     }
                 } else {
-                    ApprovalStatus::Denied
+                    // System-sensitive: requires verification
+                    ApprovalStatus::Pending
                 }
             }
             ToolRequest::TaskComplete => ApprovalStatus::Approved,
@@ -103,7 +142,7 @@ pub fn resolve_pending_action(
         .ok_or(Error::ActionNotFound)?;
     let record = step.action_record.as_mut().ok_or(Error::ActionNotFound)?;
 
-    if record.approval_status != ApprovalStatus::Pending {
+    if record.approval_status != ApprovalStatus::Pending && record.approval_status != ApprovalStatus::Denied {
         return Err(Error::ActionNotPending);
     }
 
@@ -230,21 +269,119 @@ mod tests {
     }
 
     #[test]
-    fn test_commands_are_denied_by_default() {
-        let policy = DefaultApprovalPolicy::default();
+    fn test_policy_project_boundary() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let policy = DefaultApprovalPolicy::default().auto_approve(true);
+
+        // 1. WriteFile inside root => Approved
         assert_eq!(
-            policy.evaluate(&ToolRequest::RunCommand {
+            policy.evaluate(&root, &ToolRequest::WriteFile {
+                path: PathBuf::from("local.txt"),
+                content: "data".to_string()
+            }),
+            ApprovalStatus::Approved
+        );
+
+        // 2. WriteFile using `..` outside root => Pending
+        assert_eq!(
+            policy.evaluate(&root, &ToolRequest::WriteFile {
+                path: PathBuf::from("../outside.txt"),
+                content: "data".to_string()
+            }),
+            ApprovalStatus::Pending
+        );
+
+        // 3. WriteFile with an absolute/outside path
+        let outside_dir = tempdir().unwrap();
+        let outside_path = outside_dir.path().join("evil.txt");
+        assert_eq!(
+            policy.evaluate(&root, &ToolRequest::WriteFile {
+                path: outside_path.clone(),
+                content: "data".to_string()
+            }),
+            ApprovalStatus::Pending
+        );
+
+        // 4. DeleteFile inside root => Pending (always)
+        assert_eq!(
+            policy.evaluate(&root, &ToolRequest::DeleteFile {
+                path: PathBuf::from("local.txt")
+            }),
+            ApprovalStatus::Pending
+        );
+
+        // 5. ReadFile inside root => Approved
+        assert_eq!(
+            policy.evaluate(&root, &ToolRequest::ReadFile {
+                path: PathBuf::from("local.txt")
+            }),
+            ApprovalStatus::Approved
+        );
+
+        // 6. GitStatus/GitDiff => Approved
+        assert_eq!(
+            policy.evaluate(&root, &ToolRequest::GitStatus),
+            ApprovalStatus::Approved
+        );
+        assert_eq!(
+            policy.evaluate(&root, &ToolRequest::GitDiff),
+            ApprovalStatus::Approved
+        );
+    }
+
+    #[test]
+    fn test_override_denied_to_approved() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
+
+        let (mut agent, project) = open_project(root.clone()).unwrap();
+        select_task(&mut agent, &project, "1").unwrap();
+
+        let mut trace = ExecutionTrace::new();
+        trace.steps.push(StepResult {
+            model_response: ModelResponse {
+                content: "Run".to_string(),
+            },
+            action_record: Some(ActionRecord {
+                task_id: "1".to_string(),
+                request: ToolRequest::RunCommand {
+                    command: "evil".to_string(),
+                },
+                approval_status: ApprovalStatus::Denied,
+                outcome: ExecutionOutcome::Denied,
+            }),
+            verification: None,
+        });
+
+        // 8. Explicit override can change Denied -> Approved
+        resolve_pending_action(&agent, &mut trace, 0, true).unwrap();
+        let record = trace.steps[0].action_record.as_ref().unwrap();
+        assert_eq!(record.approval_status, ApprovalStatus::Approved);
+    }
+
+    #[test]
+    fn test_commands_are_denied_by_default() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let policy = DefaultApprovalPolicy::default();
+        // Unknown commands now result in Pending, so the user can choose in the UI.
+        assert_eq!(
+            policy.evaluate(&root, &ToolRequest::RunCommand {
                 command: "curl https://example.com".to_string(),
             }),
-            ApprovalStatus::Denied
+            ApprovalStatus::Pending
         );
     }
 
     #[test]
     fn test_empty_command_is_denied_even_if_allowlisted() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
         let policy = DefaultApprovalPolicy::default().allow_command("");
         assert_eq!(
-            policy.evaluate(&ToolRequest::RunCommand {
+            policy.evaluate(&root, &ToolRequest::RunCommand {
                 command: String::new()
             }),
             ApprovalStatus::Denied
@@ -253,15 +390,17 @@ mod tests {
 
     #[test]
     fn test_allowlisted_commands_still_require_approval() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
         let policy = DefaultApprovalPolicy::default().allow_command("cargo test");
         assert_eq!(
-            policy.evaluate(&ToolRequest::RunCommand {
+            policy.evaluate(&root, &ToolRequest::RunCommand {
                 command: "cargo test".to_string(),
             }),
             ApprovalStatus::Pending
         );
         assert_eq!(
-            policy.evaluate(&ToolRequest::RunCommand {
+            policy.evaluate(&root, &ToolRequest::RunCommand {
                 command: "cargo test --all".to_string(),
             }),
             ApprovalStatus::Denied

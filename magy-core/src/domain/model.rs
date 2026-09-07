@@ -232,6 +232,7 @@ impl RunStateMachine {
         let next_state = match (&self.state, &transition) {
             (RunState::Idle, RunTransition::Start) => RunState::Starting,
             (RunState::Starting, RunTransition::RequestPlan) => RunState::AwaitingPlan,
+            (RunState::Starting, RunTransition::BeginTask(_)) => RunState::ExecutingTask,
             (RunState::AwaitingPlan, RunTransition::BeginPlanning) => RunState::Planning,
             (RunState::Planning, RunTransition::AwaitModel) => RunState::AwaitingModel,
             (RunState::AwaitingModel, RunTransition::ValidatePlan) => RunState::PlanValidation,

@@ -75,7 +75,7 @@ Infrastructure is where external systems are integrated without allowing them to
 
 ## Agent Model
 
-Magy's agent is modeled as an explicit state machine.
+Magy's agent is modeled as an **authoritative state machine**. The model (AI) participates in reasoning, but neither the model nor the human operator can advance the state directly without runtime validation.
 
 The general lifecycle is:
 
@@ -153,23 +153,40 @@ Planning converts the project's current state into actionable work while preserv
 
 The model may participate in reasoning, but the runtime remains responsible for enforcing project boundaries and execution rules.
 
-## Models
+## Dual-Model Protocol
 
-Magy treats AI models as replaceable components.
-
-The core communicates with models through a provider abstraction rather than embedding one specific model implementation into the agent itself.
-
-Conceptually:
+Magy implements a dual-model orchestration protocol that separates high-level project architecture from low-level task execution.
 
 ```text
-Agent
-   ↓
-Model Provider
-   ↓
-Local Model Runtime
+Planner (Architect)  ←→  MAGY Runtime  ←→  Executor (Worker)
+      (Qwen)                                   (Nemotron)
 ```
 
-This allows different local model backends to be introduced without redesigning the agent architecture.
+### Roles and Responsibilities
+
+*   **Planner (Architect)**: Typically a larger model (e.g., Qwen-2.5-7b). It is responsible for analyzing project goals and breaking them down into a structured task list with clear acceptance criteria and required artifacts.
+*   **Executor (Worker)**: Typically a smaller, faster model (e.g., Nemotron-3-nano-4b). It is bounded to a single task at a time and cannot modify the project plan or declare the project finished.
+
+Neither model has the authority to advance the project state directly. The **MAGY Runtime** acts as the sole state authority, validating the Planner's output and independently verifying the Executor's evidence before marking a task as complete.
+
+## Models
+
+Magy treats AI models as replaceable roles. The system is optimized for a dual-model setup but can be configured to use a single model for both roles.
+
+### Defaults and Configuration
+
+The CLI and App use the following defaults when connecting to LM Studio:
+
+*   **Planner**: `qwen2.5-7b-instruct`
+*   **Executor**: `nvidia/nemotron-3-nano-4b`
+
+To customize the models, set the following environment variables before running the workbench (`Magy.exe`):
+
+```powershell
+$env:MAGY_PLANNER_MODEL = "qwen2.5-7b-instruct"
+$env:MAGY_EXECUTOR_MODEL = "nvidia/nemotron-3-nano-4b"
+./Magy.exe
+```
 
 ## Tools
 
@@ -283,9 +300,7 @@ Complete
 ```
 
 Verification is therefore treated as part of the execution architecture rather than as an optional reporting step.
-The current default verification contract validates that a tool returned a
-successful result; project-specific test execution and richer semantic
-verification are not implemented yet.
+Magy includes a generic verification runner that can execute `cargo test`, `npm test`, or custom commands defined in `Project.md`.
 
 ## Development
 
@@ -352,23 +367,14 @@ application is included in a workspace checkout.
 
 ## Local workbench UI
 
-The `magy-ui` directory contains the dependency-free browser workbench served
-by `magy-app`. Start the app and open `http://localhost:3000` to load a
-project. The interface is organized like a compact VS Code workbench:
+Magy includes a native desktop workbench for managing project execution. When you run `magy-app`, it opens a dedicated engineering interface organized like a compact VS Code workspace:
 
 * **Overview** summarizes the active task, repository, and run state.
-* **Activity** shows the agent trace with reasoning cards, collapsed raw tool
-  details, and verification results.
-* **Chat** provides a separate conversational surface and multiline composer.
-* **Tasks**, **Source**, and **Settings** expose the project plan, read-only
-  GitHub metadata, and safe-tool approval preference.
+* **Activity** shows the real-time agent trace with reasoning, tools, and verification results.
+* **Chat** provides a conversational surface for planning and discussing changes.
+* **Tasks**, **Source**, and **Settings** expose the project plan, read-only GitHub metadata, and execution preferences.
 
-The UI keeps the existing `/api/load-project`, `/api/initialize`, `/api/run`,
-`/api/chat`, `/api/resolve`, `/api/settings`, `/api/github-info`, and
-`/api/events` contracts unchanged. Write actions are presented in an explicit
-approval dialog, while untrusted project and model text is rendered as text
-rather than executable markup. The layout adapts to narrow screens without
-requiring a frontend dependency or build step.
+The workbench allows you to open any local project directory and oversee the Magy runtime as it works through your engineering goals.
 
 ## License
 

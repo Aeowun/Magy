@@ -5,6 +5,21 @@ All notable changes to Magy are documented here.
 > [!TIP]
 > **Unreleased** — Magy is currently in active core development. The implementation is being built incrementally, with each milestone verified before new capabilities are added.
 
+### Dual-Model Protocol
+
+*   Implemented the **Dual-Model Protocol** (Planner vs. Executor) to separate
+    high-level project architecture from bounded task execution.
+*   Added the **authoritative state authority** in the core runtime; models can
+    request tool actions but cannot declare tasks or projects complete.
+*   Updated `magy-app` and `magy-cli` to support independent Planner and
+    Executor model configurations via environment variables.
+*   Improved the background worker in `magy-app` with safety breaks to prevent
+    infinite reasoning loops when a run is stalled or denied.
+*   Added automatic security allowlisting for recommended project verification
+    commands (e.g., `cargo run`, `npm test`) when Auto-approve is enabled.
+*   Added persistent **Agent state snapshots**, ensuring the authoritative
+    state machine recovers perfectly from pauses or application restarts.
+
 ### Workbench UI
 
 * Replaced the broken multi-panel frontend with a responsive, dependency-free
@@ -166,7 +181,7 @@ All notable changes to Magy are documented here.
 * Verified atomic replacement writes and filesystem/resource limits.
 * Verified bounded command output and timeout behavior.
 * Verified execution audit and verification contracts.
-* Core test suite currently passes **73 tests**.
+* Core test suite currently passes **106 tests**.
 
 ## [0.1.0]
 
@@ -187,16 +202,11 @@ This release establishes the deterministic, project-scoped foundation required f
 
 ### Not Yet Included
 
-* Autonomous Agent loop.
-* Test-runner integration.
-* Live activity/event system.
-* Git automation.
-* Persistent Agent runs.
-* Persistent audit storage or external policy configuration.
-* Rich semantic verification beyond successful tool results.
-* Desktop UI.
-* Multi-agent functionality.
-* Cloud services.
+* **Automated Git Commits**: Magy can inspect Git status but does not yet perform automated commits or branching.
+* **Persistent Audit Database**: While runs are snapshotted, a formal immutable audit ledger is not yet implemented.
+* **Rich Semantic Verification**: Verification currently relies on exit codes and tool success; LLM-based verification of complex acceptance criteria is a future milestone.
+* **Native Desktop Shell**: Currently hosted in the browser via `magy-app`.
+* **Cloud / Collaborative services**: Magy remains strictly local-first.
 
 ## Release Policy
 

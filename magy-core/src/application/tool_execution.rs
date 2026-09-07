@@ -18,7 +18,9 @@
 use crate::domain::agent::{Agent, State};
 use crate::domain::tool::{ToolRequest, ToolResult};
 use crate::infrastructure::command::run_project_command;
-use crate::infrastructure::filesystem::{discover_files, list_directory, read_file, write_file};
+use crate::infrastructure::filesystem::{
+    delete_file, discover_files, list_directory, move_file, read_file, write_file,
+};
 
 /// Executes a tool request within the project boundary.
 pub fn execute_tool(agent: &Agent, request: ToolRequest) -> ToolResult {
@@ -55,6 +57,14 @@ pub fn execute_tool(agent: &Agent, request: ToolRequest) -> ToolResult {
         ToolRequest::GitDiff => match run_project_command(root, "git diff --no-ext-diff -- .") {
             Ok(out) => ToolResult::Command(out),
             Err(e) => ToolResult::Error(format!("Git diff error: {:?}", e)),
+        },
+        ToolRequest::DeleteFile { path } => match delete_file(root, &path) {
+            Ok(()) => ToolResult::Success,
+            Err(e) => ToolResult::Error(format!("Delete error: {:?}", e)),
+        },
+        ToolRequest::MoveFile { from, to } => match move_file(root, &from, &to) {
+            Ok(()) => ToolResult::Success,
+            Err(e) => ToolResult::Error(format!("Move error: {:?}", e)),
         },
         ToolRequest::RunCommand { command } => match run_project_command(root, &command) {
             Ok(out) => ToolResult::Command(out),

@@ -354,7 +354,7 @@ mod tests {
     use crate::application::planning::plan_execution;
     use crate::application::project_lifecycle::open_project;
     use crate::application::task_lifecycle::select_task;
-    use crate::domain::model::ModelResponse;
+    use crate::domain::model::{ApprovalStatus, ModelResponse};
     use crate::domain::project::TaskStatus;
     use std::fs;
     use tempfile::tempdir;
@@ -429,6 +429,8 @@ mod tests {
         let plan = plan_execution(&agent, &context).unwrap();
         select_task(&mut agent, &project, "1").unwrap();
 
+        fs::write(root.join("res.txt"), "ok").unwrap();
+
         let provider = MultiMockProvider {
             responses: std::cell::RefCell::new(vec![
                 Ok(ModelResponse {
@@ -472,9 +474,11 @@ mod tests {
         let plan = plan_execution(&agent, &context).unwrap();
         select_task(&mut agent, &project, "1").unwrap();
 
+        fs::write(root.join("res.txt"), "ok").unwrap();
+
         let provider = MultiMockProvider {
             responses: std::cell::RefCell::new(vec![
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"write_file\", \"path\": \"out.txt\", \"content\": \"data\"}\n```".to_string() }),
+                Ok(ModelResponse { content: "```json\n{\"tool\": \"delete_file\", \"path\": \"out.txt\"}\n```".to_string() }),
             ]),
         };
 
@@ -540,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_error_leaves_a_terminal_failed_run() {
+    fn tool_boundary_violation_stops_cycle() {
         let dir = tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
@@ -556,6 +560,12 @@ mod tests {
             })]),
         };
         let mut trace = ExecutionTrace::new();
+        trace.run.start(3);
+        trace.run.begin_planning();
+        trace.run.await_model();
+        trace.run.validate_plan();
+        trace.run.commit_plan();
+        trace.run.begin_task("1");
 
         let result = run_execution_cycle(
             &mut agent,
@@ -571,9 +581,11 @@ mod tests {
             &mut trace,
         );
 
-        assert!(matches!(result, Err(Error::ToolError(_))));
-        assert_eq!(agent.state(), &State::Failed);
-        assert_eq!(trace.run.state(), &crate::domain::model::RunState::Failed);
+        assert!(result.is_ok());
+        // Boundary violations are now caught by policy and result in AwaitingApproval (soft guardrail)
+        assert_eq!(trace.run.state(), &RunState::AwaitingApproval);
+        assert_eq!(trace.steps.len(), 1);
+        assert_eq!(trace.steps[0].action_record.as_ref().unwrap().approval_status, ApprovalStatus::Pending);
         assert!(trace.validate());
     }
 
@@ -672,9 +684,11 @@ mod tests {
         let plan = plan_execution(&agent, &context).unwrap();
         select_task(&mut agent, &project, "1").unwrap();
 
+        fs::write(root.join("res.txt"), "ok").unwrap();
+
         let provider = MultiMockProvider {
             responses: std::cell::RefCell::new(vec![
-                Ok(ModelResponse { content: "```json\n{\"tool\": \"write_file\", \"path\": \"res.txt\", \"content\": \"ok\"}\n```".to_string() }),
+                Ok(ModelResponse { content: "```json\n{\"tool\": \"delete_file\", \"path\": \"res.txt\"}\n```".to_string() }),
                 Ok(ModelResponse { content: "Finished".to_string() }),
             ]),
         };
@@ -699,7 +713,7 @@ mod tests {
         assert_eq!(trace.stopped_reason, "Action requires approval");
 
         crate::application::approval::resolve_pending_action(&agent, &mut trace, 0, true).unwrap();
-        assert_eq!(fs::read_to_string(root.join("res.txt")).unwrap(), "ok");
+        assert!(!root.join("res.txt").exists());
 
         run_execution_cycle(
             &mut agent,
@@ -734,22 +748,22 @@ mod tests {
         select_task(&mut agent, &project, "1").unwrap();
 
         // Regression Flow:
-        // 1. Model proposes write_file using flat schema.
+        // 1. Model proposes delete_file using flat schema.
         // 2. Verification command is run (fails first).
         // 3. Model proposes task_complete using flat schema.
         // 4. Verification passes.
         let provider = MultiMockProvider {
             responses: std::cell::RefCell::new(vec![
-                Ok(ModelResponse { content: "{\"tool\": \"write_file\", \"path\": \"main.rs\", \"content\": \"// fixed\", \"command\": null}".to_string() }),
-                Ok(ModelResponse { content: "{\"tool\": \"task_complete\", \"path\": null, \"content\": null, \"command\": null}".to_string() }),
-                Ok(ModelResponse { content: "{\"tool\": \"task_complete\", \"path\": null, \"content\": null, \"command\": null}".to_string() }),
+                Ok(ModelResponse { content: "{\"tool\": \"delete_file\", \"path\": \"main.rs\", \"from\": null, \"to\": null, \"content\": null, \"command\": null}".to_string() }),
+                Ok(ModelResponse { content: "{\"tool\": \"task_complete\", \"path\": null, \"from\": null, \"to\": null, \"content\": null, \"command\": null}".to_string() }),
+                Ok(ModelResponse { content: "{\"tool\": \"task_complete\", \"path\": null, \"from\": null, \"to\": null, \"content\": null, \"command\": null}".to_string() }),
             ]),
         };
 
         let mut trace = ExecutionTrace::new();
         let cmd = "echo verify"; // Always passes (exit code 0)
 
-        // RUN 1: write_file. Note: DefaultApprovalPolicy marks write_file as Pending.
+        // RUN 1: delete_file. Note: DefaultApprovalPolicy marks delete_file as Pending.
         run_execution_cycle(
             &mut agent,
             &mut project,
@@ -767,10 +781,7 @@ mod tests {
 
         assert_eq!(trace.stopped_reason, "Action requires approval");
         crate::application::approval::resolve_pending_action(&agent, &mut trace, 0, true).unwrap();
-        assert_eq!(
-            fs::read_to_string(root.join("main.rs")).unwrap(),
-            "// fixed"
-        );
+        assert!(!root.join("main.rs").exists());
 
         // RUN 2: task_complete.
         run_execution_cycle(

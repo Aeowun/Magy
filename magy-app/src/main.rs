@@ -16,8 +16,8 @@
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
 use axum::{
-    extract::{Query, State},
-    response::{Html, IntoResponse, Json},
+    extract::State,
+    response::{sse::Event as SseEvent, Html, IntoResponse, Json, Sse},
     routing::{get, post},
     Router,
 };
@@ -29,14 +29,19 @@ use magy_core::{
     LmStudioProvider, Project, RunOutcome, RunResult, RunSnapshot, RunState,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tao::{
+    event::{Event as TaoEvent, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+};
 use tokio::sync::Mutex;
-use tower_http::services::ServeDir;
+use wry::webview::WebViewBuilder;
 
 const WORKER_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(95);
 
@@ -47,7 +52,7 @@ fn planner_config() -> LmStudioConfig {
             .unwrap_or_else(|_| "http://localhost:1234/v1".to_string()),
         model_name: std::env::var("MAGY_PLANNER_MODEL")
             .or_else(|_| std::env::var("MAGY_MODEL"))
-            .unwrap_or_else(|_| "nvidia/nemotron-3-nano-4b".to_string()),
+            .unwrap_or_else(|_| "qwen/qwen3-1.7b".to_string()),
     }
 }
 
@@ -74,6 +79,7 @@ fn publish_event_locked(state: &mut AppState, event: UiEvent) {
     while state.event_history.len() > MAX_EVENT_HISTORY {
         state.event_history.pop_front();
     }
+    let _ = state.event_sender.send(envelope);
 }
 
 async fn publish_event(state: &SharedState, event: UiEvent) {
@@ -118,12 +124,13 @@ struct AppState {
     terminal_event_emitted: bool,
     auto_approve_tools: bool,
     chat_history: Vec<(String, String)>,
+    event_sender: tokio::sync::broadcast::Sender<UiEventEnvelope>,
 }
 
 type SharedState = Arc<Mutex<AppState>>;
 
 #[derive(Serialize, Clone, Debug)]
-#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[serde(tag = "type", content = "data")]
 enum UiEvent {
     ProjectLoaded(UiProject),
     AgentStateChanged(RunState),
@@ -133,11 +140,16 @@ enum UiEvent {
     },
     RunFinished(RunOutcome),
     Error(String),
+    Chat {
+        role: String,
+        content: String,
+    },
 }
 
 #[derive(Serialize, Clone, Debug)]
 struct UiEventEnvelope {
     seq: u64,
+    #[serde(flatten)]
     event: UiEvent,
 }
 
@@ -181,8 +193,9 @@ Use run_command only for an allowlisted command that directly advances the activ
 If a command is denied, choose a different action instead of repeating it.
 All fields (tool, path, content, command) are required. Use null when not applicable.
 For write_file, provide path and content only; command must be null. For run_command,
-provide command only; path and content must be null. For task_complete and
-discover_files, all three optional fields must be null.
+provide command only; path and content must be null. For delete_file, provide path
+only; content and command must be null. For task_complete and discover_files,
+all three optional fields must be null.
 Use git_status and git_diff to inspect the real repository state before claiming progress.
 Only use task_complete after the requested work has actually been performed and
 no required action was denied or failed. A model assertion is not verification.
@@ -192,6 +205,7 @@ instead of claiming success."#;
 
 #[tokio::main]
 async fn main() {
+    let (event_sender, _) = tokio::sync::broadcast::channel(100);
     let state = Arc::new(Mutex::new(AppState {
         root: None,
         project: None,
@@ -204,10 +218,13 @@ async fn main() {
         terminal_event_emitted: false,
         auto_approve_tools: false,
         chat_history: Vec::new(),
+        event_sender,
     }));
 
     let app = Router::new()
         .route("/", get(root_handler))
+        .route("/style.css", get(style_handler))
+        .route("/app.js", get(js_handler))
         .route("/api/load-project", post(load_project))
         .route("/api/initialize", post(initialize_project))
         .route("/api/run", post(run_agent))
@@ -217,35 +234,76 @@ async fn main() {
         .route("/api/github-info", get(github_info))
         .route("/api/chat", post(chat))
         .route("/api/settings", post(update_settings))
-        // Serve everything in magy-ui at the root so index.html can find app.js/style.css
-        .fallback_service(ServeDir::new("magy-ui"))
-        .with_state(state);
+        .with_state(Arc::clone(&state));
 
-    println!("Starting Magy at http://127.0.0.1:3000");
-    let addr = "0.0.0.0:3000".parse().unwrap();
+    let addr = "127.0.0.1:3000".parse().unwrap();
+    println!("Starting Magy backend at http://{}", addr);
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
+    // Run the Axum server in a background task
+    tokio::spawn(async move {
+        axum::Server::bind(&addr)
+            .serve(app.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    // Create the native window on the main thread
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        .with_title("MAGY - AI Engineering Workbench")
+        .with_inner_size(tao::dpi::LogicalSize::new(1200.0, 800.0))
+        .with_theme(Some(tao::window::Theme::Dark))
+        .build(&event_loop)
         .unwrap();
+
+    let _webview = WebViewBuilder::new(window)
+        .unwrap()
+        .with_url("http://127.0.0.1:3000")
+        .unwrap()
+        .build()
+        .unwrap();
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+
+        match event {
+            TaoEvent::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => *control_flow = ControlFlow::Exit,
+            _ => (),
+        }
+    });
 }
 
 async fn root_handler() -> impl IntoResponse {
     Html(include_str!("../../magy-ui/index.html"))
 }
 
-async fn load_project(State(state): State<SharedState>) -> Json<serde_json::Value> {
-    let folder = tokio::task::spawn_blocking(|| {
-        rfd::FileDialog::new()
-            .set_title("Open Magy Project")
-            .pick_folder()
-    })
-    .await
-    .unwrap();
+async fn style_handler() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/css")],
+        include_str!("../../magy-ui/style.css"),
+    )
+}
 
-    let Some(path) = folder else {
-        return Json(serde_json::json!({ "status": "cancelled" }));
-    };
+async fn js_handler() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/javascript")],
+        include_str!("../../magy-ui/app.js"),
+    )
+}
+
+#[derive(Deserialize)]
+struct LoadProjectRequest {
+    path: String,
+}
+
+async fn load_project(
+    State(state): State<SharedState>,
+    Json(payload): Json<LoadProjectRequest>,
+) -> Json<serde_json::Value> {
+    let path = PathBuf::from(payload.path);
 
     let mut s = state.lock().await;
     match open_project(path.clone()) {
@@ -361,7 +419,6 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
         Some(root) => root,
         None => return Json(serde_json::json!({ "status": "error", "message": "No project loaded" })),
     };
-    let auto_approve_tools = s.auto_approve_tools;
     if s.trace.run.state().is_terminal() {
         s.trace = ExecutionTrace::new();
     }
@@ -390,10 +447,12 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
 
                 let mut trace;
                 let prev_step_count;
+                let auto_approve_tools;
                 {
                     let state = state_ref.lock().await;
                     trace = state.trace.clone();
                     prev_step_count = trace.steps.len();
+                    auto_approve_tools = state.auto_approve_tools;
                 }
 
                 let run_res: Result<RunResult, magy_core::Error> = match tokio::time::timeout(
@@ -469,9 +528,9 @@ async fn run_agent(State(state): State<SharedState>) -> Json<serde_json::Value> 
                             break;
                         }
 
-                        if result.state.is_terminal() || result.state == RunState::Stalled {
+                        if result.state == RunState::Stalled {
                             s.worker_active = false;
-                            publish_event_locked(&mut s, UiEvent::AgentStateChanged(result.state.clone()));
+                            publish_event_locked(&mut s, UiEvent::AgentStateChanged(RunState::Stalled));
                             publish_terminal_locked(&mut s);
                             persist_snapshot_locked(&s);
                             break;
@@ -515,17 +574,19 @@ async fn finalize_worker(state: &SharedState, error: Option<String>) {
 
 async fn get_events(
     State(state): State<SharedState>,
-    Query(params): Query<HashMap<String, String>>,
-) -> Json<EventResponse> {
-    let after_seq = params.get("after").and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
-    let s = state.lock().await;
-    let events = s.event_history.iter().filter(|e| e.seq > after_seq).cloned().collect();
-    Json(EventResponse { events })
-}
+) -> impl IntoResponse {
+    let mut rx = state.lock().await.event_sender.subscribe();
 
-#[derive(Serialize)]
-struct EventResponse {
-    events: Vec<UiEventEnvelope>,
+    let stream = async_stream::stream! {
+        // First, send any missed events if necessary (simplified for now: just new events)
+        while let Ok(envelope) = rx.recv().await {
+            if let Ok(json) = serde_json::to_string(&envelope) {
+                yield Ok::<SseEvent, std::convert::Infallible>(SseEvent::default().data(json));
+            }
+        }
+    };
+
+    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 
 #[derive(Deserialize)]
@@ -627,8 +688,16 @@ async fn chat(
     };
 
     let user_message = payload.message.clone();
+
+    // Publish user message immediately to the UI
+    publish_event(&state, UiEvent::Chat {
+        role: "user".to_string(),
+        content: user_message.clone()
+    }).await;
+
     let result = tokio::task::spawn_blocking(move || {
-        let provider = LmStudioProvider::new(executor_config());
+        // Chat uses the Planner (Thinker) model (Qwen 1.7B)
+        let provider = LmStudioProvider::new(planner_config());
         provider.ask_chat(&user_message, &history, Some(&project))
     }).await.unwrap();
 
@@ -637,6 +706,13 @@ async fn chat(
             let mut s = state.lock().await;
             s.chat_history.push(("user".to_string(), payload.message));
             s.chat_history.push(("assistant".to_string(), reply.clone()));
+
+            // Publish assistant reply via event stream
+            publish_event_locked(&mut s, UiEvent::Chat {
+                role: "assistant".to_string(),
+                content: reply.clone()
+            });
+
             Json(serde_json::json!({ "status": "success", "reply": reply }))
         }
         Err(e) => Json(serde_json::json!({ "status": "error", "message": format!("{:?}", e) })),
@@ -673,6 +749,7 @@ mod tests {
             terminal_event_emitted: false,
             auto_approve_tools: false,
             chat_history: Vec::new(),
+            event_sender: tokio::sync::broadcast::channel(1).0,
         };
         state.trace.start(1);
         state.trace.run.complete(vec![]);

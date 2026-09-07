@@ -6,3 +6,6 @@ target/
 
 # Magy runtime snapshots
 .magy/
+
+# Distribution
+Dist/

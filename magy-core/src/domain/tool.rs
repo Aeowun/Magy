@@ -28,6 +28,8 @@ pub enum ToolRequest {
     DiscoverFiles,
     GitStatus,
     GitDiff,
+    DeleteFile { path: PathBuf },
+    MoveFile { from: PathBuf, to: PathBuf },
     RunCommand { command: String },
     TaskComplete,
 }
@@ -38,6 +40,8 @@ pub enum ToolRequest {
 pub struct FlatToolRequest {
     pub tool: String,
     pub path: Option<PathBuf>,
+    pub from: Option<PathBuf>,
+    pub to: Option<PathBuf>,
     pub content: Option<String>,
     pub command: Option<String>,
 }
@@ -90,6 +94,21 @@ impl FlatToolRequest {
                     None
                 }
             }
+            "delete_file" => {
+                if self.content.is_none() && self.command.is_none() {
+                    self.path.map(|path| ToolRequest::DeleteFile { path })
+                } else {
+                    None
+                }
+            }
+            "move_file" => {
+                if self.content.is_none() && self.command.is_none() {
+                    if let (Some(from), Some(to)) = (self.from, self.to) {
+                        return Some(ToolRequest::MoveFile { from, to });
+                    }
+                }
+                None
+            }
             "run_command" => {
                 if self.path.is_none() && self.content.is_none() {
                     self.command
@@ -137,6 +156,8 @@ mod tests {
         let request = FlatToolRequest {
             tool: "write_file".to_string(),
             path: Some(PathBuf::from("index.html")),
+            from: None,
+            to: None,
             content: Some("body".to_string()),
             command: Some("task_complete".to_string()),
         };
@@ -148,6 +169,8 @@ mod tests {
         let request = FlatToolRequest {
             tool: "task_complete".to_string(),
             path: None,
+            from: None,
+            to: None,
             content: None,
             command: None,
         };

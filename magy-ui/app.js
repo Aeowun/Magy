@@ -16,7 +16,7 @@ const UI = {
 
     cacheElements() {
         const ids = [
-            'load-project-btn', 'project-path-input', 'startup-view', 'startup-actions', 'init-zone', 'goal-input', 'start-init-btn', 'startup-error',
+            'load-project-btn', 'startup-view', 'startup-actions', 'init-zone', 'goal-input', 'start-init-btn', 'startup-error',
             'workspace', 'header-project-name', 'header-run-btn', 'header-cancel-btn', 'run-summary', 'agent-status', 'overview-project-name',
             'overview-goal', 'overview-task', 'overview-repo', 'overview-branch', 'overview-run-state', 'overview-evidence',
             'overview-run-btn', 'task-list', 'task-count', 'feed-container', 'activity-count', 'clear-feed-btn', 'chat-feed',
@@ -67,14 +67,10 @@ const UI = {
     },
 
     async loadProject() {
-        const path = this.projectPathInput.value.trim();
-        if (!path) { this.showError('Path is required', 'Enter the full path to your project directory.'); return; }
         this.setBusy(this.loadProjectBtn, 'Opening…');
         try {
             const data = await this.secureFetch('/api/load-project', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path })
+                method: 'POST'
             });
             if (data.status === 'success') this.showWorkspace(data.project);
             else if (data.status === 'error' && /FileNotFound|not found|missing/i.test(data.message || '')) this.showInitZone();
@@ -226,7 +222,7 @@ const UI = {
         const state = trace.run && trace.run.state ? trace.run.state : 'idle';
         this.setBackendState(state);
         if (trace.run && trace.run.outcome) this.handleStop(trace.run.outcome);
-        else if (snapshot.worker_active === false && state === 'awaiting_approval') this.setRunning(false);
+        else if (snapshot.worker_active === false && (state === 'awaiting_approval' || state === 'stalled')) this.setRunning(false);
     },
 
     handleStop(outcome) {
@@ -240,6 +236,10 @@ const UI = {
             this.runSummary.textContent = 'Run stalled';
             this.overviewRunState.textContent = 'Stalled';
             this.appendNotice(message, 'system');
+            // If stalled due to a denial, show approval dialog anyway to allow override
+            if (this.state.lastRecord && this.state.lastRecord.approval_status === 'denied') {
+                this.showApproval();
+            }
         } else if (kind === 'failed') {
             const message = (outcome.details && outcome.details.message) || 'Run failed';
             this.runSummary.textContent = 'Run failed';
@@ -278,6 +278,9 @@ const UI = {
             this.setRunning(false);
         }
         if (state === 'awaiting_approval') this.showApproval();
+        else if (state === 'stalled' && this.state.lastRecord && this.state.lastRecord.approval_status === 'denied') {
+            this.showApproval();
+        }
     },
 
     appendActivity(step = {}, index = this.state.activityCount) {

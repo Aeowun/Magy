@@ -273,7 +273,7 @@ mod tests {
 
         let provider = MultiMockProvider {
             responses: std::cell::RefCell::new(vec![
-                Ok(crate::domain::model::ModelResponse { content: "```json\n{\"tool\": \"write_file\", \"path\": \"a.txt\", \"content\": \"c\"}\n```".to_string() }),
+                Ok(crate::domain::model::ModelResponse { content: "```json\n{\"tool\": \"delete_file\", \"path\": \"a.txt\"}\n```".to_string() }),
             ]),
             plans: std::cell::RefCell::new(vec![]),
         };

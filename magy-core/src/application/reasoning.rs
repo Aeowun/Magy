@@ -67,7 +67,8 @@ pub fn run_reasoning_step(
                 outcome: ExecutionOutcome::CompletionRequested,
             })
         } else {
-            let approval_status = policy.evaluate(&tool_req);
+            let root = agent.root().ok_or(Error::Io)?;
+            let approval_status = policy.evaluate(root, &tool_req);
             let outcome = match approval_status {
                 ApprovalStatus::Approved => {
                     let res = execute_tool(agent, tool_req.clone());
@@ -187,7 +188,7 @@ mod tests {
         status: ApprovalStatus,
     }
     impl ApprovalPolicy for MockPolicy {
-        fn evaluate(&self, _req: &ToolRequest) -> ApprovalStatus {
+        fn evaluate(&self, _root: &std::path::Path, _req: &ToolRequest) -> ApprovalStatus {
             self.status.clone()
         }
     }
@@ -257,8 +258,8 @@ mod tests {
         )
         .unwrap();
         let record = result.action_record.unwrap();
-        assert_eq!(record.approval_status, ApprovalStatus::Pending);
-        assert_eq!(record.outcome, ExecutionOutcome::AwaitingApproval);
+        // Project-local writes are now safe-by-default (Approved)
+        assert_eq!(record.approval_status, ApprovalStatus::Approved);
     }
 
     #[test]
@@ -417,10 +418,9 @@ mod tests {
         )
         .unwrap();
         let record = result.action_record.unwrap();
-        assert!(matches!(
-            record.outcome,
-            ExecutionOutcome::Executed(ToolResult::Error(_))
-        ));
+        // Boundary violations are now caught by policy and result in AwaitingApproval (soft guardrail)
+        assert_eq!(record.approval_status, ApprovalStatus::Pending);
+        assert_eq!(record.outcome, ExecutionOutcome::AwaitingApproval);
     }
 
     #[test]
