@@ -17,7 +17,7 @@
 
 use crate::application::approval::ApprovalPolicy;
 use crate::application::tool_execution::execute_tool;
-use crate::domain::agent::{Agent, Event, State};
+use crate::domain::agent::{Agent, State};
 use crate::domain::model::{
     ActionRecord, ApprovalStatus, ExecutionOutcome, ModelAction, ModelProvider, ModelRequest,
     StepResult,
@@ -50,19 +50,21 @@ pub fn run_reasoning_step(
     };
 
     let response = provider.ask(request)?;
-    let action = parse_model_action(&response.content);
+    let action = match parse_model_action_result(&response.content) {
+        Ok(action) => Some(action),
+        Err(Error::ParseError(_)) if !response.content.contains('{') => None,
+        Err(error) => return Err(error),
+    };
 
     let action_record = if let Some(ModelAction::ToolCall(tool_req)) = action {
         if tool_req == ToolRequest::TaskComplete {
-            // TaskComplete is a virtual control action.
-            // Transition to Verifying but don't mark as Done yet.
-            agent.transition(Event::ActionDone)?;
-
+            // TaskComplete is a runtime completion request. The execution
+            // coordinator performs verification and persists the transition.
             Some(ActionRecord {
                 task_id: agent.task().map(|t| t.id.clone()).unwrap_or_default(),
                 request: tool_req,
                 approval_status: ApprovalStatus::Approved,
-                outcome: ExecutionOutcome::NotApplicable,
+                outcome: ExecutionOutcome::CompletionRequested,
             })
         } else {
             let approval_status = policy.evaluate(&tool_req);
@@ -98,11 +100,16 @@ pub fn run_reasoning_step(
 /// Supports both raw JSON and JSON blocks inside triple backticks.
 /// Handles both the standard tagged format and the flat schema with nulls.
 pub fn parse_model_action(content: &str) -> Option<ModelAction> {
+    parse_model_action_result(content).ok()
+}
+
+/// Parses a model response and reports malformed output as a typed failure.
+pub fn parse_model_action_result(content: &str) -> Result<ModelAction, Error> {
     let trimmed = content.trim();
 
     // 1. Try parsing as standard ToolRequest or FlatToolRequest (Structured Output mode)
     if let Some(action) = try_parse_json(trimmed) {
-        return Some(action);
+        return Ok(action);
     }
 
     // 2. Fall back to finding markdown blocks (Markdown mode)
@@ -114,7 +121,7 @@ pub fn parse_model_action(content: &str) -> Option<ModelAction> {
         if let Some(end_idx) = trimmed[json_start..].find(end_tag) {
             let json_str = &trimmed[json_start..json_start + end_idx].trim();
             if let Some(action) = try_parse_json(json_str) {
-                return Some(action);
+                return Ok(action);
             }
         }
     }
@@ -124,12 +131,14 @@ pub fn parse_model_action(content: &str) -> Option<ModelAction> {
         if let Some(end_idx) = trimmed.rfind('}') {
             let json_str = &trimmed[start_idx..=end_idx];
             if let Some(action) = try_parse_json(json_str) {
-                return Some(action);
+                return Ok(action);
             }
         }
     }
 
-    None
+    Err(Error::ParseError(
+        "Model response did not contain a valid tool action".to_string(),
+    ))
 }
 
 fn try_parse_json(json_str: &str) -> Option<ModelAction> {
@@ -168,6 +177,9 @@ mod tests {
     impl ModelProvider for MockProvider {
         fn ask(&self, _req: ModelRequest) -> Result<ModelResponse, Error> {
             self.response.clone()
+        }
+        fn plan(&self, _req: crate::domain::model::PlannerRequest) -> Result<crate::domain::model::PlannerResponse, Error> {
+            unreachable!()
         }
     }
 
@@ -296,6 +308,10 @@ mod tests {
                 definition_of_done: vec![],
                 tasks: vec![],
                 current_status: "".to_string(),
+                plan_version: 0,
+                plan_created_at_ms: None,
+                replan_count: 0,
+                replan_reason: None,
             },
             files: vec![],
         };
@@ -368,8 +384,8 @@ mod tests {
             &DefaultApprovalPolicy::default(),
             "S",
         )
-        .unwrap();
-        assert_eq!(result.action_record, None);
+        .unwrap_err();
+        assert!(matches!(result, Error::ParseError(_)));
     }
 
     #[test]
@@ -434,9 +450,9 @@ mod tests {
             "S",
         )
         .unwrap();
-        assert_eq!(agent.state(), &State::Verifying);
+        assert_eq!(agent.state(), &State::Executing);
         let record = result.action_record.unwrap();
         assert_eq!(record.request, ToolRequest::TaskComplete);
-        assert_eq!(record.outcome, ExecutionOutcome::NotApplicable);
+        assert_eq!(record.outcome, ExecutionOutcome::CompletionRequested);
     }
 }

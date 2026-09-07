@@ -141,6 +141,9 @@ pub fn discover_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
 
         for entry in read_dir {
             let entry = entry.map_err(|_| Error::Io)?;
+            if entry.file_name() == ".magy" {
+                continue;
+            }
             let path = entry.path();
             let ft = entry.file_type().map_err(|_| Error::Io)?;
 
@@ -401,6 +404,18 @@ mod tests {
             let result = is_link_or_reparse(&missing, &ft);
             assert_eq!(result, Err(Error::Io));
         }
+    }
+
+    #[test]
+    fn test_discover_files_skips_runtime_snapshot_directory() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        fs::create_dir(root.join(".magy")).unwrap();
+        fs::write(root.join(".magy").join("run-snapshot.json"), "{}").unwrap();
+        fs::write(root.join("visible.txt"), "visible").unwrap();
+
+        let files = discover_files(&root).unwrap();
+        assert_eq!(files, vec![PathBuf::from("visible.txt")]);
     }
 
     #[test]

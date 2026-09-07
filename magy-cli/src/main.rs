@@ -45,7 +45,19 @@ instead of claiming success."#;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CliConfig::from_args(std::env::args().collect())?;
 
-    let provider = LmStudioProvider::new(config.lm_config.clone());
+    let planner_url = std::env::var("MAGY_PLANNER_BASE_URL")
+        .or_else(|_| std::env::var("MAGY_BASE_URL"))
+        .unwrap_or_else(|_| "http://localhost:1234/v1".to_string());
+    let planner_model = std::env::var("MAGY_PLANNER_MODEL")
+        .or_else(|_| std::env::var("MAGY_MODEL"))
+        .unwrap_or_else(|_| "nvidia/nemotron-3-nano-4b".to_string());
+
+    let planner = LmStudioProvider::new(LmStudioConfig {
+        base_url: planner_url,
+        model_name: planner_model,
+    });
+    let executor = LmStudioProvider::new(config.lm_config.clone());
+
     let verification_command = if config.verification_command == "auto" {
         recommended_verification_command(&config.project_path).unwrap_or_default()
     } else {
@@ -71,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(magy_core::Error::FileNotFound) => {
             println!("Project.md not found. Initializing new project...");
             let goal = "Build a small Rust command-line calculator."; // For testing
-            let p = magy_core::initialize_project(config.project_path.clone(), &provider, goal)?;
+            let p = magy_core::initialize_project(config.project_path.clone(), &planner, goal)?;
             println!("Project initialized: {}\n", p.name);
         }
         Err(e) => return Err(e.into()),
@@ -80,7 +92,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let result = run_project_workflow(
             config.project_path.clone(),
-            &provider,
+            &planner,
+            &executor,
             &policy,
             &verification_command,
             &config.system_prompt,
@@ -99,12 +112,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
 
-        if result.stop_reason == "Action requires approval" {
+        if result.state == magy_core::RunState::AwaitingApproval {
             handle_approval(&config, &result, &mut trace)?;
             continue;
         }
 
-        println!("\nExecution stopped: {}", result.stop_reason);
+        println!(
+            "\nExecution stopped in {:?}: {:?}",
+            result.state, result.outcome
+        );
         break;
     }
 
@@ -133,12 +149,24 @@ impl CliConfig {
         let max_steps = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10);
         let max_verifications = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(3);
 
+        let base_url = std::env::var("MAGY_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:1234/v1".to_string());
+        let model_name = std::env::var("MAGY_MODEL")
+            .unwrap_or_else(|_| "nvidia/nemotron-3-nano-4b".to_string());
+
+        let executor_url = std::env::var("MAGY_EXECUTOR_BASE_URL")
+            .or_else(|_| std::env::var("MAGY_BASE_URL"))
+            .unwrap_or_else(|_| base_url.clone());
+        let executor_model = std::env::var("MAGY_EXECUTOR_MODEL")
+            .or_else(|_| std::env::var("MAGY_MODEL"))
+            .unwrap_or_else(|_| model_name.clone());
+
         Ok(Self {
             project_path,
             verification_command,
             lm_config: LmStudioConfig {
-                base_url: "http://localhost:1234/v1".to_string(),
-                model_name: "nvidia/nemotron-3-nano-4b".to_string(),
+                base_url: executor_url,
+                model_name: executor_model,
             },
             system_prompt: SYSTEM_PROMPT.to_string(),
             max_steps,

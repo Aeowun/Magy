@@ -21,6 +21,10 @@ pub mod boundary;
 pub mod domain;
 pub mod infrastructure;
 
+pub use application::snapshot::RunSnapshot;
+pub use application::snapshot::{
+    load_run_snapshot, recover_orphaned_snapshot, save_run_snapshot, snapshot_path,
+};
 pub use application::verification_runner::recommended_verification_command;
 pub use application::{
     assemble_project_context, complete_current_task, execute_tool, initialize_project,
@@ -28,9 +32,11 @@ pub use application::{
     run_project_workflow, run_reasoning_step, save_project, select_task, ApprovalPolicy,
     DefaultApprovalPolicy,
 };
+pub use domain::agent::{Agent, Task};
 pub use domain::model::{
-    ActionRecord, ApprovalStatus, ExecutionOutcome, ExecutionTrace, ModelAction, ModelProvider,
-    ModelRequest, ModelResponse, RunResult, StepResult,
+    ActionRecord, ApprovalStatus, CancellationReason, ExecutionOutcome, ExecutionTrace,
+    FailureReason, ModelAction, ModelProvider, ModelRequest, ModelResponse, RecoveryMetadata,
+    RunOutcome, RunResult, RunState, RunStateMachine, RunTransition, StepResult,
 };
 pub use domain::project::{
     FileContent, FileContext, Project, ProjectContext, ProjectPlan, ProjectTask, TaskStatus,
@@ -69,6 +75,14 @@ pub enum Error {
     ActionNotPending,
     /// An error occurred while communicating with the model provider.
     ModelError(String),
+    /// The model returned a response that could not be parsed as an action.
+    ParseError(String),
+    /// A requested tool failed during execution.
+    ToolError(String),
+    /// Project context could not be assembled or refreshed.
+    ContextError(String),
+    /// An internal error occurred.
+    Internal(String),
 }
 
 impl fmt::Display for Error {

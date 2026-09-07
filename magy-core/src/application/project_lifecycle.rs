@@ -110,6 +110,10 @@ Output ONLY a JSON object matching the requested schema.";
         definition_of_done: vec![],
         tasks: vec![],
         current_status: "Initializing".to_string(),
+        plan_version: 0,
+        plan_created_at_ms: None,
+        replan_count: 0,
+        replan_reason: None,
     };
 
     let request = ModelRequest {
@@ -146,9 +150,15 @@ Output ONLY a JSON object matching the requested schema.";
                 id: (i + 1).to_string(),
                 description: desc,
                 status: TaskStatus::Open,
+                acceptance_criteria: vec![],
+                evidence: vec![],
             })
             .collect(),
         current_status: "Initialized".to_string(),
+        plan_version: 1,
+        plan_created_at_ms: Some(crate::domain::model::now_ms()),
+        replan_count: 0,
+        replan_reason: None,
     };
 
     // 6. Save to disk.
@@ -210,6 +220,10 @@ mod tests {
             definition_of_done: vec![],
             tasks: vec![],
             current_status: "".to_string(),
+            plan_version: 0,
+            plan_created_at_ms: None,
+            replan_count: 0,
+            replan_reason: None,
         };
 
         save_project(&root, &project).unwrap();
@@ -232,6 +246,10 @@ mod tests {
             definition_of_done: vec![],
             tasks: vec![],
             current_status: "".to_string(),
+            plan_version: 0,
+            plan_created_at_ms: None,
+            replan_count: 0,
+            replan_reason: None,
         };
 
         let result = save_project(&root, &project);
@@ -246,6 +264,9 @@ mod tests {
             Ok(crate::domain::model::ModelResponse {
                 content: self.response.clone(),
             })
+        }
+        fn plan(&self, _req: crate::domain::model::PlannerRequest) -> Result<crate::domain::model::PlannerResponse, Error> {
+            unreachable!()
         }
     }
 

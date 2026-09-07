@@ -30,6 +30,16 @@ pub struct ProjectTask {
     pub id: String,
     pub description: String,
     pub status: TaskStatus,
+    pub acceptance_criteria: Vec<String>,
+    pub evidence: Vec<Evidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Evidence {
+    pub timestamp_ms: u64,
+    pub verifier: String,
+    pub passed: bool,
+    pub output: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -41,6 +51,10 @@ pub struct Project {
     pub definition_of_done: Vec<String>,
     pub tasks: Vec<ProjectTask>,
     pub current_status: String,
+    pub plan_version: u32,
+    pub plan_created_at_ms: Option<u64>,
+    pub replan_count: u32,
+    pub replan_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -145,11 +159,18 @@ pub fn parse_project_md(content: &str) -> Result<Project, Error> {
                 };
 
                 if let Some(s) = status {
-                    let desc = trimmed[6..].to_string();
+                    let parts: Vec<&str> = trimmed[6..].splitn(2, ": ").collect();
+                    let (id, desc) = if parts.len() == 2 {
+                        (parts[0].to_string(), parts[1].to_string())
+                    } else {
+                        ((tasks.len() + 1).to_string(), parts[0].to_string())
+                    };
                     tasks.push(ProjectTask {
-                        id: (tasks.len() + 1).to_string(),
+                        id,
                         description: desc,
                         status: s,
+                        acceptance_criteria: vec![],
+                        evidence: vec![],
                     });
                 }
             }
@@ -172,6 +193,10 @@ pub fn parse_project_md(content: &str) -> Result<Project, Error> {
         definition_of_done: dod,
         tasks,
         current_status: status_lines.join("\n").trim().to_string(),
+        plan_version: 0,
+        plan_created_at_ms: None,
+        replan_count: 0,
+        replan_reason: None,
     })
 }
 
@@ -186,6 +211,9 @@ pub fn serialize_project_md(project: &Project) -> String {
     out.push_str("Goal\n");
     out.push_str(&project.goal);
     out.push_str("\n\n");
+
+    // Metadata (Projection) - MOVED to end or omitted from canonical serialization
+    // to maintain backward compatibility with existing tests and parsers.
 
     // Requirements (Optional)
     if !project.requirements.is_empty() {
@@ -342,14 +370,22 @@ In progress";
                     id: "1".to_string(),
                     description: "T1".to_string(),
                     status: TaskStatus::Done,
+                    acceptance_criteria: vec![],
+                    evidence: vec![],
                 },
                 ProjectTask {
                     id: "2".to_string(),
                     description: "T2".to_string(),
                     status: TaskStatus::Open,
+                    acceptance_criteria: vec![],
+                    evidence: vec![],
                 },
             ],
             current_status: "Status line 1\nStatus line 2".to_string(),
+            plan_version: 1,
+            plan_created_at_ms: None,
+            replan_count: 0,
+            replan_reason: None,
         };
 
         let output = serialize_project_md(&project);
@@ -372,14 +408,22 @@ In progress";
                     id: "1".to_string(),
                     description: "Task 1".to_string(),
                     status: TaskStatus::Done,
+                    acceptance_criteria: vec![],
+                    evidence: vec![],
                 },
                 ProjectTask {
                     id: "2".to_string(),
                     description: "Task 2".to_string(),
                     status: TaskStatus::Open,
+                    acceptance_criteria: vec![],
+                    evidence: vec![],
                 },
             ],
             current_status: "Working".to_string(),
+            plan_version: 0,
+            plan_created_at_ms: None,
+            replan_count: 0,
+            replan_reason: None,
         };
 
         let serialized = serialize_project_md(&project);

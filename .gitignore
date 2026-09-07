@@ -3,3 +3,6 @@
 
 # Rust build artifacts
 target/
+
+# Magy runtime snapshots
+.magy/

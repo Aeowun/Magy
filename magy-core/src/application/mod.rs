@@ -22,6 +22,7 @@ pub mod execution;
 pub mod planning;
 pub mod project_lifecycle;
 pub mod reasoning;
+pub mod snapshot;
 pub mod task_lifecycle;
 pub mod tool_execution;
 pub mod verification_runner;
@@ -34,5 +35,8 @@ pub use execution::run_execution_cycle;
 pub use planning::plan_execution;
 pub use project_lifecycle::{initialize_project, open_project, save_project};
 pub use reasoning::{parse_model_action, run_reasoning_step};
+pub use snapshot::{
+    load_run_snapshot, recover_orphaned_snapshot, save_run_snapshot, snapshot_path, RunSnapshot,
+};
 pub use task_lifecycle::{complete_current_task, select_task};
 pub use tool_execution::execute_tool;

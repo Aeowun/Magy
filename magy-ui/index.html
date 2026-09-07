@@ -20,6 +20,10 @@
                         <div><span class="check-mark" aria-hidden="true">✓</span><span>LM Studio</span><code>localhost:1234/v1</code></div>
                         <div><span class="check-mark" aria-hidden="true">✓</span><span>Model</span><code>nvidia/nemotron-3-nano-4b</code></div>
                     </div>
+                    <div class="input-group" style="margin-bottom: 1rem;">
+                        <label for="project-path-input" class="sr-only">Project Directory</label>
+                        <input id="project-path-input" type="text" placeholder="Enter project directory path (e.g. C:\Dev\MyProject)" style="width: 100%; padding: 0.75rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary);">
+                    </div>
                     <button id="load-project-btn" class="button primary button-wide" type="button">Open project</button>
                 </div>
                 <div id="init-zone" class="init-zone" hidden>
@@ -42,6 +46,7 @@
                 <div class="topbar-actions">
                     <span class="connection-pill"><span class="connection-dot" aria-hidden="true"></span>Local model</span>
                     <button id="header-run-btn" class="button primary compact" type="button">Run task</button>
+                    <button id="header-cancel-btn" class="button secondary compact" type="button" hidden>Cancel</button>
                 </div>
             </header>
 

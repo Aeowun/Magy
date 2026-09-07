@@ -16,8 +16,10 @@
 // along with Magy. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::domain::agent::{Agent, State};
-use crate::domain::project::{ProjectContext, ProjectPlan, TaskStatus};
+use crate::domain::model::{ModelProvider, PlannerRequest, PlannerResponse};
+use crate::domain::project::{Project, ProjectContext, ProjectPlan, TaskStatus};
 use crate::Error;
+use std::collections::HashSet;
 
 /// Produces a deterministic execution plan from the project context.
 pub fn plan_execution(agent: &Agent, context: &ProjectContext) -> Result<ProjectPlan, Error> {
@@ -36,14 +38,145 @@ pub fn plan_execution(agent: &Agent, context: &ProjectContext) -> Result<Project
     Ok(ProjectPlan { tasks: open_tasks })
 }
 
+/// Orchestrates an LLM-backed project planning session.
+pub fn plan_project(
+    project: &Project,
+    context: &ProjectContext,
+    provider: &dyn ModelProvider,
+    system_prompt: &str,
+) -> Result<PlannerResponse, Error> {
+    let request = PlannerRequest {
+        system_prompt: system_prompt.to_string(),
+        goal: project.goal.clone(),
+        requirements: project.requirements.clone(),
+        constraints: project.constraints.clone(),
+        definition_of_done: project.definition_of_done.clone(),
+        existing_tasks: project.tasks.clone(),
+        context: context.clone(),
+    };
+
+    let response = provider.plan(request)?;
+    validate_plan(&response, project)?;
+
+    Ok(response)
+}
+
+fn validate_plan(response: &PlannerResponse, _project: &Project) -> Result<(), Error> {
+    if response.tasks.is_empty() {
+        return Err(Error::ParseError("Planner returned an empty task list".to_string()));
+    }
+
+    let mut ids = HashSet::new();
+    for task in &response.tasks {
+        if task.id.is_empty() {
+            return Err(Error::ParseError("Task ID cannot be empty".to_string()));
+        }
+        if !ids.insert(task.id.clone()) {
+            return Err(Error::ParseError(format!("Duplicate task ID: {}", task.id)));
+        }
+        if task.description.is_empty() {
+            return Err(Error::ParseError(format!("Task {} description cannot be empty", task.id)));
+        }
+        if task.acceptance_criteria.is_empty() {
+            return Err(Error::ParseError(format!(
+                "Task {} must have at least one acceptance criterion",
+                task.id
+            )));
+        }
+        if task.status != TaskStatus::Open {
+             return Err(Error::ParseError(format!(
+                "Planner attempted to claim task {} is already complete",
+                task.id
+            )));
+        }
+    }
+
+    // Dependency validation (Placeholder - assuming simple linear for now, but contract allows for DAG)
+    // In a full implementation, we'd check for cycles and valid references here.
+
+    if response.tasks.len() > 50 {
+         return Err(Error::ParseError("Planner returned too many tasks (>50)".to_string()));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::application::context_assembly::assemble_project_context;
     use crate::application::project_lifecycle::open_project;
+    use crate::domain::model::ModelRequest;
     use crate::domain::project::Project;
     use std::fs;
     use tempfile::tempdir;
+
+    struct MockPlanner {
+        response: Result<PlannerResponse, Error>,
+    }
+    impl ModelProvider for MockPlanner {
+        fn ask(&self, _: ModelRequest) -> Result<crate::domain::model::ModelResponse, Error> {
+            unreachable!()
+        }
+        fn plan(&self, _: PlannerRequest) -> Result<PlannerResponse, Error> {
+            self.response.clone()
+        }
+    }
+
+    #[test]
+    fn test_plan_project_validation_empty() {
+        let project = Project {
+            name: "P".to_string(),
+            goal: "G".to_string(),
+            requirements: vec![],
+            constraints: vec![],
+            definition_of_done: vec![],
+            tasks: vec![],
+            current_status: "".to_string(),
+            plan_version: 0,
+            plan_created_at_ms: None,
+            replan_count: 0,
+            replan_reason: None,
+        };
+        let context = ProjectContext { project: project.clone(), files: vec![] };
+        let provider = MockPlanner {
+            response: Ok(PlannerResponse { plan_version: 1, tasks: vec![] }),
+        };
+
+        let res = plan_project(&project, &context, &provider, "");
+        assert!(matches!(res, Err(Error::ParseError(msg)) if msg.contains("empty")));
+    }
+
+    #[test]
+    fn test_plan_project_validation_duplicates() {
+        let project = Project {
+            name: "P".to_string(),
+            goal: "G".to_string(),
+            requirements: vec![],
+            constraints: vec![],
+            definition_of_done: vec![],
+            tasks: vec![],
+            current_status: "".to_string(),
+            plan_version: 0,
+            plan_created_at_ms: None,
+            replan_count: 0,
+            replan_reason: None,
+        };
+        let context = ProjectContext { project: project.clone(), files: vec![] };
+        let task = crate::domain::project::ProjectTask {
+            id: "1".to_string(),
+            description: "D".to_string(),
+            status: TaskStatus::Open,
+            acceptance_criteria: vec!["C".to_string()],
+            evidence: vec![],
+        };
+        let provider = MockPlanner {
+            response: Ok(PlannerResponse { plan_version: 1, tasks: vec![task.clone(), task] }),
+        };
+
+        let res = plan_project(&project, &context, &provider, "");
+        assert!(matches!(res, Err(Error::ParseError(msg)) if msg.contains("Duplicate")));
+    }
 
     #[test]
     fn test_plan_execution() {
@@ -73,6 +206,10 @@ mod tests {
                 definition_of_done: vec![],
                 tasks: vec![],
                 current_status: "".to_string(),
+                plan_version: 0,
+                plan_created_at_ms: None,
+                replan_count: 0,
+                replan_reason: None,
             },
             files: vec![],
         };

@@ -1,6 +1,6 @@
 /* Magy workbench: the UI speaks only to the existing HTTP/SSE contract. */
 const UI = {
-    state: { pendingIndex: null, lastRecord: null, lastIndex: null, activityCount: 0, verificationCount: 0 },
+    state: { pendingIndex: null, lastRecord: null, lastIndex: null, activityCount: 0, verificationCount: 0, lastSeq: 0 },
 
     escapeHtml(value) {
         return String(value == null ? '' : value).replace(/[&<>"']/g, (character) => ({
@@ -16,8 +16,8 @@ const UI = {
 
     cacheElements() {
         const ids = [
-            'load-project-btn', 'startup-view', 'startup-actions', 'init-zone', 'goal-input', 'start-init-btn', 'startup-error',
-            'workspace', 'header-project-name', 'header-run-btn', 'run-summary', 'agent-status', 'overview-project-name',
+            'load-project-btn', 'project-path-input', 'startup-view', 'startup-actions', 'init-zone', 'goal-input', 'start-init-btn', 'startup-error',
+            'workspace', 'header-project-name', 'header-run-btn', 'header-cancel-btn', 'run-summary', 'agent-status', 'overview-project-name',
             'overview-goal', 'overview-task', 'overview-repo', 'overview-branch', 'overview-run-state', 'overview-evidence',
             'overview-run-btn', 'task-list', 'task-count', 'feed-container', 'activity-count', 'clear-feed-btn', 'chat-feed',
             'chat-form', 'chat-input', 'step-summary', 'verify-summary', 'refresh-github-btn', 'open-github-btn',
@@ -33,6 +33,7 @@ const UI = {
         this.loadProjectBtn.addEventListener('click', () => this.loadProject());
         this.startInitBtn.addEventListener('click', () => this.initializeProject());
         this.headerRunBtn.addEventListener('click', () => this.runAgent());
+        this.headerCancelBtn.addEventListener('click', () => this.cancelAgent());
         this.overviewRunBtn.addEventListener('click', () => this.runAgent());
         this.approveBtn.addEventListener('click', () => this.resolveAction(true));
         this.denyBtn.addEventListener('click', () => this.resolveAction(false));
@@ -66,9 +67,15 @@ const UI = {
     },
 
     async loadProject() {
+        const path = this.projectPathInput.value.trim();
+        if (!path) { this.showError('Path is required', 'Enter the full path to your project directory.'); return; }
         this.setBusy(this.loadProjectBtn, 'Opening…');
         try {
-            const data = await this.secureFetch('/api/load-project', { method: 'POST' });
+            const data = await this.secureFetch('/api/load-project', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
             if (data.status === 'success') this.showWorkspace(data.project);
             else if (data.status === 'error' && /FileNotFound|not found|missing/i.test(data.message || '')) this.showInitZone();
             else if (data.status !== 'cancelled') this.showError('Project error', data.message);
@@ -144,11 +151,19 @@ const UI = {
     },
 
     async runAgent() {
-        this.setRunning(true);
         try {
             const result = await this.secureFetch('/api/run', { method: 'POST' });
             if (result.status === 'error') this.showError('Agent error', result.message);
         } catch (error) { this.showError('Could not start agent', error.message); }
+    },
+
+    async cancelAgent() {
+        this.headerCancelBtn.disabled = true;
+        try {
+            const result = await this.secureFetch('/api/cancel', { method: 'POST' });
+            if (result.status !== 'cancellation_requested') this.showError('Could not cancel agent', result.message);
+        } catch (error) { this.showError('Could not cancel agent', error.message); }
+        this.headerCancelBtn.disabled = false;
     },
 
     async updateSettings() {
@@ -169,7 +184,6 @@ const UI = {
         try {
             const result = await this.secureFetch('/api/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index, approved }) });
             if (result.status === 'success') {
-                this.setStatus(approved ? 'Approved' : 'Denied', approved ? 'active' : 'idle');
                 // Both decisions resolve the pending step; a denial lets the
                 // runtime ask the model for a replacement action.
                 this.runAgent();
@@ -187,11 +201,16 @@ const UI = {
     },
 
     handleBackendEvent(event) {
+        if (Number.isFinite(event.seq)) {
+            if (event.seq <= this.state.lastSeq) return;
+            this.state.lastSeq = event.seq;
+        }
         switch (event.type) {
+            case 'Snapshot': this.applySnapshot(event.data); break;
             case 'ProjectLoaded': this.updateProjectUI(event.data); break;
-            case 'AgentStateChanged': this.setStatus(event.data); break;
+            case 'AgentStateChanged': this.setBackendState(event.data); break;
             case 'Step': this.appendActivity(event.data && event.data.step, event.data && event.data.index); break;
-            case 'Stop': this.handleStop(event.data); break;
+            case 'RunFinished': this.handleStop(event.data); break;
             case 'Error': this.showError('Runtime error', event.data); break;
             case 'Warning': this.appendNotice(event.data, 'warning'); break;
             case 'Chat': this.appendChat(event.data && event.data.role, event.data && event.data.content); break;
@@ -199,14 +218,66 @@ const UI = {
         }
     },
 
-    handleStop(reason) {
-        const message = String(reason || 'Run stopped');
+    applySnapshot(snapshot = {}) {
+        if (snapshot.project) this.updateProjectUI(snapshot.project);
+        const trace = snapshot.trace || {};
+        const steps = Array.isArray(trace.steps) ? trace.steps : [];
+        steps.forEach((step, index) => this.appendActivity(step, index));
+        const state = trace.run && trace.run.state ? trace.run.state : 'idle';
+        this.setBackendState(state);
+        if (trace.run && trace.run.outcome) this.handleStop(trace.run.outcome);
+        else if (snapshot.worker_active === false && state === 'awaiting_approval') this.setRunning(false);
+    },
+
+    handleStop(outcome) {
+        const kind = outcome && outcome.kind;
         this.setRunning(false);
-        this.runSummary.textContent = message === 'Task completed successfully' ? 'Task completed' : message;
-        this.overviewRunState.textContent = message === 'Task completed successfully' ? 'Completed' : 'Stopped';
-        if (message === 'Action requires approval') this.showApproval();
-        else if (/Verification warning/i.test(message)) this.appendNotice(message, 'warning');
-        else if (message !== 'Task completed successfully') this.appendNotice(message, 'system');
+        if (kind === 'completed') {
+            this.runSummary.textContent = 'Project completed';
+            this.overviewRunState.textContent = 'Completed';
+        } else if (kind === 'stalled') {
+            const message = (outcome.details && outcome.details.message) || 'Run stalled';
+            this.runSummary.textContent = 'Run stalled';
+            this.overviewRunState.textContent = 'Stalled';
+            this.appendNotice(message, 'system');
+        } else if (kind === 'failed') {
+            const message = (outcome.details && outcome.details.message) || 'Run failed';
+            this.runSummary.textContent = 'Run failed';
+            this.overviewRunState.textContent = 'Failed';
+            this.appendNotice(message, 'system');
+        } else if (kind === 'cancelled') {
+            this.runSummary.textContent = 'Run cancelled';
+            this.overviewRunState.textContent = 'Cancelled';
+            this.appendNotice('Run cancelled', 'system');
+        } else {
+            this.runSummary.textContent = 'Run finished';
+        }
+    },
+
+    setBackendState(state) {
+        const labels = {
+            idle: ['Idle', 'idle'],
+            starting: ['Starting', 'active'],
+            planning: ['Planning', 'active'],
+            awaiting_model: ['Awaiting model', 'active'],
+            awaiting_approval: ['Awaiting approval', 'idle'],
+            executing_tool: ['Executing tool', 'active'],
+            verifying: ['Verifying', 'active'],
+            recovering: ['Recovering', 'active'],
+            stalled: ['Stalled', 'idle'],
+            completed: ['Completed', 'idle'],
+            failed: ['Failed', 'error'],
+            cancelled: ['Cancelled', 'idle']
+        };
+        const value = labels[String(state || '').toLowerCase()] || ['Idle', 'idle'];
+        this.setStatus(value[0], value[1]);
+        if (state === 'starting' || state === 'planning' || state === 'awaiting_model' ||
+            state === 'executing_tool' || state === 'verifying' || state === 'recovering') {
+            this.setRunning(true);
+        } else if (state === 'awaiting_approval' || state === 'stalled') {
+            this.setRunning(false);
+        }
+        if (state === 'awaiting_approval') this.showApproval();
     },
 
     appendActivity(step = {}, index = this.state.activityCount) {
@@ -358,6 +429,8 @@ const UI = {
     setRunning(running) {
         this.executionProgress.hidden = !running;
         this.headerRunBtn.disabled = running;
+        this.headerCancelBtn.hidden = !running;
+        this.headerCancelBtn.disabled = false;
         this.overviewRunBtn.disabled = running;
         if (running) { this.setStatus('Executing', 'active'); this.runSummary.textContent = 'Working through the active task…'; this.overviewRunState.textContent = 'Running'; }
     },

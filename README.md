@@ -325,6 +325,20 @@ Run the test suite with:
 cargo test
 ```
 
+The CLI uses `nvidia/nemotron-3-nano-4b` by default when connecting to the
+local LM Studio provider. To compare another locally loaded model without
+changing source code, set `MAGY_MODEL`:
+
+```powershell
+$env:MAGY_MODEL = "qwen/qwen3-1.7b"
+cargo run -p magy-cli -- C:\path\to\project "node scripts/check.js"
+```
+
+Model comparisons should keep the project fixture, verification command,
+approval policy, step budget, and model settings constant. A terminal
+`Completed` result is not sufficient evidence of correctness; inspect the
+generated behavior with an executable acceptance test.
+
 For core-library development:
 
 ```bash

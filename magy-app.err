@@ -1,0 +1,3 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.27s
+     Running `target\debug\magy-app.exe`
+error: process didn't exit successfully: `target\debug\magy-app.exe` (exit code: 1)

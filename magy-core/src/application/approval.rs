@@ -17,7 +17,7 @@
 
 use crate::application::tool_execution::execute_tool;
 use crate::domain::agent::Agent;
-use crate::domain::model::{ApprovalStatus, ExecutionOutcome, ExecutionTrace};
+use crate::domain::model::{ApprovalStatus, ExecutionOutcome, ExecutionTrace, FailureReason};
 use crate::domain::tool::ToolRequest;
 use crate::Error;
 use std::collections::BTreeSet;
@@ -109,11 +109,18 @@ pub fn resolve_pending_action(
 
     if approved {
         record.approval_status = ApprovalStatus::Approved;
+        trace.run.execute_tool();
         let res = execute_tool(agent, record.request.clone());
+        if let crate::domain::tool::ToolResult::Error(message) = &res {
+            trace.run.fail(FailureReason::Tool(message.clone()));
+        } else {
+            trace.run.await_model();
+        }
         record.outcome = ExecutionOutcome::Executed(res);
     } else {
         record.approval_status = ApprovalStatus::Denied;
         record.outcome = ExecutionOutcome::Denied;
+        trace.run.recover();
     }
 
     Ok(())

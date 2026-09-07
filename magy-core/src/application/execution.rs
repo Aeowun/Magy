@@ -21,8 +21,10 @@ use crate::application::reasoning::run_reasoning_step;
 use crate::application::task_lifecycle::complete_current_task;
 use crate::application::verification_runner::run_verification;
 use crate::domain::agent::{Agent, Event, State};
-use crate::domain::model::{ExecutionOutcome, ExecutionTrace, ModelProvider};
-use crate::domain::project::{Project, ProjectContext, ProjectPlan};
+use crate::domain::model::{
+    now_ms, ExecutionOutcome, ExecutionTrace, FailureReason, ModelProvider, RunState, StepResult,
+};
+use crate::domain::project::{Evidence, Project, ProjectContext, ProjectPlan};
 use crate::domain::tool::{ToolRequest, ToolResult};
 use crate::Error;
 
@@ -40,11 +42,47 @@ pub fn run_execution_cycle(
     verification_command: &str,
     trace: &mut ExecutionTrace,
 ) -> Result<(), Error> {
-    trace.stopped_reason = String::new();
+    trace.start(max_steps);
+    trace.stopped_reason.clear();
+
+    let task_id = match agent.task() {
+        Some(t) => t.id.clone(),
+        None => {
+            trace.run.stall();
+            trace.stopped_reason = "No active task for execution cycle".to_string();
+            return Ok(());
+        }
+    };
+
+    let _project_task = project.tasks.iter().find(|t| t.id == task_id).ok_or_else(|| {
+        Error::Internal(format!("Task {} not found in project", task_id))
+    })?;
+
+    if trace.run.state() == &RunState::Starting {
+        trace.run.request_plan();
+    }
+    if trace.run.state() == &RunState::Planning
+        || trace.run.state() == &RunState::AwaitingApproval
+        || trace.run.state() == &RunState::Recovering
+        || trace.run.state() == &RunState::Stalled
+        || trace.run.state() == &RunState::ExecutingTask
+    {
+        trace.run.await_model();
+    }
     let mut verification_count = 0;
     let mut current_context = context.clone();
 
+    if max_steps == 0 {
+        let _ = agent.transition(Event::FatalError);
+        trace.run.stall();
+        trace.stopped_reason = "Maximum steps reached".to_string();
+        return Ok(());
+    }
+
     for i in 0..max_steps {
+        if trace.run.state() == &RunState::Recovering {
+            trace.run.await_model();
+        }
         let step = match run_reasoning_step(
             agent,
             &current_context,
@@ -56,12 +94,29 @@ pub fn run_execution_cycle(
         ) {
             Ok(s) => s,
             Err(e) => {
+                let _ = agent.transition(Event::FatalError);
+                trace.run.fail(failure_reason(&e));
                 trace.stopped_reason = format!("Runtime error: {:?}", e);
-                return Ok(());
+                return Err(e);
             }
         };
 
         let record = step.action_record.as_ref();
+        if record.is_some() {
+            trace.run.execute_tool();
+        }
+        if let Some(record) = record {
+            if has_repeated_action(&trace.steps, &record.request, 2) {
+                trace.run.record_recovery_attempt(FailureReason::Internal(
+                    "Repeated identical action without new evidence".to_string(),
+                ));
+                trace.steps.push(step);
+                trace.run.stall();
+                trace.stopped_reason =
+                    "Run stalled: repeated identical action without progress".to_string();
+                return Ok(());
+            }
+        }
         let is_task_complete = record
             .map(|r| r.request == ToolRequest::TaskComplete)
             .unwrap_or(false);
@@ -87,62 +142,124 @@ pub fn run_execution_cycle(
                     record.approval_status = crate::domain::model::ApprovalStatus::Denied;
                     record.outcome = ExecutionOutcome::Denied;
                 }
+
                 trace.steps.push(rejected_step);
-                agent.transition(Event::TestsFailed)?;
+                trace.run.stall();
                 trace.stopped_reason =
                     "Task completion rejected: unresolved action remains".to_string();
-                continue;
+                return Ok(());
             }
 
+            if let Err(error) = agent.transition(Event::ActionDone) {
+                let _ = agent.transition(Event::FatalError);
+                trace
+                    .run
+                    .fail(FailureReason::Internal(format!("{:?}", error)));
+                trace.stopped_reason = format!("Runtime error: {:?}", error);
+                return Err(error);
+            }
             trace.steps.push(step);
 
-            let ver_res = run_verification(agent, verification_command)?;
+            trace.run.request_verification();
+            trace.run.begin_verification();
+            let ver_res = match run_verification(agent, verification_command) {
+                Ok(result) => result,
+                Err(e) => {
+                    let _ = agent.transition(Event::FatalError);
+                    trace.run.fail(failure_reason(&e));
+                    trace.stopped_reason = format!("Runtime error: {:?}", e);
+                    return Err(e);
+                }
+            };
+
+            let evidence = Evidence {
+                timestamp_ms: now_ms(),
+                verifier: "runtime_verification".to_string(),
+                passed: ver_res.passed,
+                output: format!("STDOUT: {}\nSTDERR: {}", ver_res.stdout, ver_res.stderr),
+            };
+
+            if let Some(t) = project.tasks.iter_mut().find(|t| t.id == task_id) {
+                t.evidence.push(evidence);
+            }
 
             if let Some(last_step) = trace.steps.last_mut() {
                 last_step.verification = Some(ver_res.clone());
             }
 
             if ver_res.passed {
-                complete_current_task(agent, project)?;
+                if let Err(e) = complete_current_task(agent, project) {
+                    let _ = agent.transition(Event::FatalError);
+                    trace.run.fail(failure_reason(&e));
+                    trace.stopped_reason = format!("Runtime error: {:?}", e);
+                    return Err(e);
+                }
+                trace.run.request_plan();
                 trace.stopped_reason = "Task completed successfully".to_string();
                 return Ok(());
-            } else {
-                agent.transition(Event::TestsFailed)?;
-                verification_count += 1;
-
-                if verification_count >= max_verifications {
-                    trace.stopped_reason =
-                        "Verification warning: maximum verification attempts reached".to_string();
-                    return Ok(());
-                }
-                continue;
             }
+
+            if let Err(error) = agent.transition(Event::TestsFailed) {
+                let _ = agent.transition(Event::FatalError);
+                trace
+                    .run
+                    .fail(FailureReason::Internal(format!("{:?}", error)));
+                trace.stopped_reason = format!("Runtime error: {:?}", error);
+                return Err(error);
+            }
+            verification_count += 1;
+            trace
+                .run
+                .record_verification_failure(verification_count, verification_command);
+            trace.run.recover();
+
+            if verification_count >= max_verifications {
+                let _ = agent.transition(Event::FatalError);
+                trace.run.stall();
+                trace.stopped_reason =
+                    "Verification warning: maximum verification attempts reached".to_string();
+                return Ok(());
+            }
+            continue;
         }
 
         let stop = match record {
             None => {
-                if step.model_response.content.contains('{') {
-                    trace.stopped_reason =
-                        "Invalid model action; asking the model for a valid tool call".to_string();
-                    false
-                } else {
-                    trace.stopped_reason = "Model stopped without action".to_string();
-                    true
-                }
+                let _ = agent.transition(Event::FatalError);
+                trace.run.stall();
+                trace.stopped_reason = "Model stopped without action".to_string();
+                true
             }
-            Some(r) => match r.outcome {
+            Some(r) => match &r.outcome {
                 ExecutionOutcome::Denied => {
-                    trace.stopped_reason =
-                        "Action denied; asking the model for a different action".to_string();
-                    false
+                    if trace.run.record_recovery_attempt(FailureReason::Internal(
+                        "Action was denied by policy".to_string(),
+                    )) {
+                        false
+                    } else {
+                        let _ = agent.transition(Event::FatalError);
+                        trace.run.stall();
+                        trace.stopped_reason = "Action denied".to_string();
+                        true
+                    }
                 }
                 ExecutionOutcome::AwaitingApproval => {
+                    trace.run.await_approval();
                     trace.stopped_reason = "Action requires approval".to_string();
                     true
                 }
-                ExecutionOutcome::Executed(ToolResult::Error(_)) => {
+                ExecutionOutcome::Executed(ToolResult::Error(message)) => {
+                    let error = Error::ToolError(message.clone());
+                    let _ = agent.transition(Event::FatalError);
+                    trace.run.fail(FailureReason::Tool(message.clone()));
                     trace.stopped_reason = "Tool execution failed".to_string();
-                    true
+                    trace.steps.push(step);
+                    return Err(error);
+                }
+                ExecutionOutcome::CompletionRequested => false,
+                ExecutionOutcome::Executed(ToolResult::Success) => {
+                    trace.run.await_model();
+                    false
                 }
                 _ => false,
             },
@@ -150,8 +267,6 @@ pub fn run_execution_cycle(
 
         trace.steps.push(step);
 
-        // Rebuild the model context after successful mutations so the next
-        // decision is based on the files that actually exist on disk.
         if matches!(
             trace
                 .steps
@@ -164,9 +279,13 @@ pub fn run_execution_cycle(
                 match assemble_project_context(root.to_path_buf(), project.clone()) {
                     Ok(refreshed) => current_context = refreshed,
                     Err(error) => {
+                        let _ = agent.transition(Event::FatalError);
+                        trace
+                            .run
+                            .fail(FailureReason::Context(format!("{:?}", error)));
                         trace.stopped_reason =
                             format!("Runtime error refreshing project context: {:?}", error);
-                        return Ok(());
+                        return Err(Error::ContextError(format!("{:?}", error)));
                     }
                 }
             }
@@ -177,17 +296,54 @@ pub fn run_execution_cycle(
         }
 
         if i == max_steps - 1 {
+            let _ = agent.transition(Event::FatalError);
+            trace.run.stall();
             trace.stopped_reason = "Maximum steps reached".to_string();
             return Ok(());
         }
 
         if agent.state() != &State::Executing {
+            let error = Error::InvalidStateTransition;
+            let _ = agent.transition(Event::FatalError);
+            trace.run.fail(FailureReason::Internal(
+                "Agent is no longer in Executing state".to_string(),
+            ));
             trace.stopped_reason = "Agent is no longer in Executing state".to_string();
-            return Ok(());
+            return Err(error);
         }
     }
 
+    let _ = agent.transition(Event::FatalError);
+    trace.run.stall();
+    trace.stopped_reason = "Maximum steps reached".to_string();
     Ok(())
+}
+
+fn has_repeated_action(
+    history: &[StepResult],
+    request: &ToolRequest,
+    required_repeats: usize,
+) -> bool {
+    if required_repeats == 0 || history.len() < required_repeats {
+        return false;
+    }
+
+    history.iter().rev().take(required_repeats).all(|step| {
+        step.action_record
+            .as_ref()
+            .map(|record| &record.request == request)
+            .unwrap_or(false)
+    })
+}
+
+fn failure_reason(error: &Error) -> FailureReason {
+    match error {
+        Error::ModelError(message) => FailureReason::Model(message.clone()),
+        Error::ParseError(message) => FailureReason::Parse(message.clone()),
+        Error::ToolError(message) => FailureReason::Tool(message.clone()),
+        Error::ContextError(message) => FailureReason::Context(message.clone()),
+        other => FailureReason::Internal(format!("{:?}", other)),
+    }
 }
 
 #[cfg(test)]
@@ -198,7 +354,7 @@ mod tests {
     use crate::application::planning::plan_execution;
     use crate::application::project_lifecycle::open_project;
     use crate::application::task_lifecycle::select_task;
-    use crate::domain::model::{ModelRequest, ModelResponse};
+    use crate::domain::model::ModelResponse;
     use crate::domain::project::TaskStatus;
     use std::fs;
     use tempfile::tempdir;
@@ -207,7 +363,7 @@ mod tests {
         responses: std::cell::RefCell<Vec<Result<ModelResponse, Error>>>,
     }
     impl ModelProvider for MultiMockProvider {
-        fn ask(&self, _req: ModelRequest) -> Result<ModelResponse, Error> {
+        fn ask(&self, _req: crate::domain::model::ModelRequest) -> Result<crate::domain::model::ModelResponse, Error> {
             let mut resps = self.responses.borrow_mut();
             if resps.is_empty() {
                 panic!(
@@ -217,6 +373,48 @@ mod tests {
             }
             resps.remove(0)
         }
+        fn plan(&self, _: crate::domain::model::PlannerRequest) -> Result<crate::domain::model::PlannerResponse, Error> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn repeated_identical_actions_stall_without_unbounded_progress() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
+        fs::write(root.join("input.txt"), "data").unwrap();
+
+        let (mut agent, mut project) = open_project(root.clone()).unwrap();
+        let context = assemble_project_context(root.clone(), project.clone()).unwrap();
+        let plan = plan_execution(&agent, &context).unwrap();
+        select_task(&mut agent, &project, "1").unwrap();
+        let response = Ok(ModelResponse {
+            content: "```json\n{\"tool\": \"read_file\", \"path\": \"input.txt\"}\n```".to_string(),
+        });
+        let provider = MultiMockProvider {
+            responses: std::cell::RefCell::new(vec![response.clone(), response.clone(), response]),
+        };
+        let mut trace = ExecutionTrace::new();
+
+        run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            10,
+            1,
+            "echo verify",
+            &mut trace,
+        )
+        .unwrap();
+
+        assert_eq!(trace.run.state(), &RunState::Stalled);
+        assert_eq!(trace.steps.len(), 3);
+        assert!(trace.stopped_reason.contains("repeated identical action"));
     }
 
     #[test]
@@ -305,6 +503,81 @@ mod tests {
     }
 
     #[test]
+    fn provider_error_leaves_a_terminal_failed_run() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
+
+        let (mut agent, mut project) = open_project(root.clone()).unwrap();
+        let context = assemble_project_context(root.clone(), project.clone()).unwrap();
+        let plan = plan_execution(&agent, &context).unwrap();
+        select_task(&mut agent, &project, "1").unwrap();
+        let provider = MultiMockProvider {
+            responses: std::cell::RefCell::new(vec![Err(Error::ModelError(
+                "provider unavailable".to_string(),
+            ))]),
+        };
+        let mut trace = ExecutionTrace::new();
+
+        let result = run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            3,
+            1,
+            "echo verify",
+            &mut trace,
+        );
+
+        assert!(matches!(result, Err(Error::ModelError(_))));
+        assert_eq!(agent.state(), &State::Failed);
+        assert_eq!(trace.run.state(), &crate::domain::model::RunState::Failed);
+        assert!(trace.validate());
+    }
+
+    #[test]
+    fn tool_error_leaves_a_terminal_failed_run() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        fs::write(root.join("Project.md"), "P\n\nGoal\nG\n\nTasks\n- [ ] T").unwrap();
+
+        let (mut agent, mut project) = open_project(root.clone()).unwrap();
+        let context = assemble_project_context(root.clone(), project.clone()).unwrap();
+        let plan = plan_execution(&agent, &context).unwrap();
+        select_task(&mut agent, &project, "1").unwrap();
+        let provider = MultiMockProvider {
+            responses: std::cell::RefCell::new(vec![Ok(ModelResponse {
+                content: "```json\n{\"tool\":\"read_file\",\"path\":\"../outside\"}\n```"
+                    .to_string(),
+            })]),
+        };
+        let mut trace = ExecutionTrace::new();
+
+        let result = run_execution_cycle(
+            &mut agent,
+            &mut project,
+            &context,
+            &plan,
+            &provider,
+            &DefaultApprovalPolicy::default(),
+            "S",
+            3,
+            1,
+            "echo verify",
+            &mut trace,
+        );
+
+        assert!(matches!(result, Err(Error::ToolError(_))));
+        assert_eq!(agent.state(), &State::Failed);
+        assert_eq!(trace.run.state(), &crate::domain::model::RunState::Failed);
+        assert!(trace.validate());
+    }
+
+    #[test]
     fn test_invalid_structured_action_is_retryable() {
         let dir = tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
@@ -326,7 +599,7 @@ mod tests {
         };
 
         let mut trace = ExecutionTrace::new();
-        run_execution_cycle(
+        let result = run_execution_cycle(
             &mut agent,
             &mut project,
             &context,
@@ -338,13 +611,12 @@ mod tests {
             1,
             "echo verify",
             &mut trace,
-        )
-        .unwrap();
+        );
 
-        assert_eq!(trace.steps.len(), 2);
-        assert!(trace.stopped_reason.contains("approval"));
-        assert!(trace.steps[0].action_record.is_none());
-        assert!(trace.steps[1].action_record.is_some());
+        assert!(matches!(result, Err(Error::ParseError(_))));
+        assert_eq!(trace.steps.len(), 0);
+        assert_eq!(trace.run.state(), &crate::domain::model::RunState::Failed);
+        assert!(!trace.run.state().is_active());
     }
 
     #[test]

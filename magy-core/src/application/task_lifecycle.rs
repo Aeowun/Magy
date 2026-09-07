@@ -108,6 +108,10 @@ mod tests {
             definition_of_done: vec![],
             tasks: vec![],
             current_status: "".to_string(),
+            plan_version: 0,
+            plan_created_at_ms: None,
+            replan_count: 0,
+            replan_reason: None,
         };
 
         let result = select_task(&mut agent, &project, "99");
@@ -131,8 +135,14 @@ mod tests {
                 id: "1".to_string(),
                 description: "Done task".to_string(),
                 status: TaskStatus::Done,
+                acceptance_criteria: vec![],
+                evidence: vec![],
             }],
             current_status: "".to_string(),
+            plan_version: 0,
+            plan_created_at_ms: None,
+            replan_count: 0,
+            replan_reason: None,
         };
 
         let result = select_task(&mut agent, &project, "1");
@@ -152,8 +162,14 @@ mod tests {
                 id: "1".to_string(),
                 description: "Open task".to_string(),
                 status: TaskStatus::Open,
+                acceptance_criteria: vec![],
+                evidence: vec![],
             }],
             current_status: "".to_string(),
+            plan_version: 0,
+            plan_created_at_ms: None,
+            replan_count: 0,
+            replan_reason: None,
         };
 
         let result = select_task(&mut agent, &project, "1");

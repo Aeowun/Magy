@@ -52,7 +52,7 @@ pub enum Event {
     FatalError,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Agent {
     state: State,
     root: Option<PathBuf>,
