@@ -4,17 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-magy-core = { path = "../magy-core" }
 axum = { version = "0.6", features = ["macros"] }
-tokio = { version = "1.0", features = ["full"] }
-tokio-stream = "0.1"
-tower-http = { version = "0.4", features = ["fs"] }
+tokio = { version = "1.36", features = ["full"] }
+tower-http = { version = "0.4", features = ["fs", "cors"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rfd = "0.14"
-tracing = "0.1"
-tracing-subscriber = "0.3"
+tao = "0.16"
+wry = "0.24"
 futures-util = "0.3"
 async-stream = "0.3"
-wry = "0.24"
-tao = "0.16"

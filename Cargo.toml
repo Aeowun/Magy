@@ -1,8 +1,5 @@
 [workspace]
-resolver = "2"
-
 members = [
-    "magy-core",
-    "magy-cli",
     "magy-app",
 ]
+resolver = "2"

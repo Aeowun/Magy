@@ -9,3 +9,9 @@ target/
 
 # Distribution
 Dist/
+
+# Logs and session data
+relay_logs/
+*.log
+*.err
+last_project.txt

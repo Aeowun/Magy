@@ -12,6 +12,5 @@ echo Building Magy...
 cargo build --workspace
 if errorlevel 1 exit /b %errorlevel%
 
-echo Starting Magy at http://127.0.0.1:3000
-start "" http://127.0.0.1:3000
+echo Starting Magy...
 cargo run -p magy-app
